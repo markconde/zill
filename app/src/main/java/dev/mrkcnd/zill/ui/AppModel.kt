@@ -184,7 +184,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val (h, port) = splitHostPort(trimmed, 7455)
-        if (h.isEmpty()) { pairing.value = PairingUi.Failed("Type the Mac's address, such as 100.101.102.103 or mac.tailnet.ts.net."); return }
+        if (h.isEmpty()) { pairing.value = PairingUi.Failed("Type the Mac's address, such as 192.168.1.20."); return }
         val known = saved.value
         if (known.isEmpty()) { pairing.value = PairingUi.EnterCode(h, h, port, null, fromAsk = false); return }
         // A Mac this device already paired with, at an address it didn't know (its home address

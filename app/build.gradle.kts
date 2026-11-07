@@ -22,8 +22,8 @@ android {
         // TLS 1.3 and SSLParameters.setApplicationProtocols (ALPN) both need Android 10.
         minSdk = 29
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.5.5"
+        versionCode = 22
+        versionName = "0.5.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

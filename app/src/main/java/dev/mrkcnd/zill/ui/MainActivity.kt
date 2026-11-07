@@ -167,7 +167,7 @@ private fun AddMacDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
             Column {
                 Text(
                     "On your Mac, choose Pair iPhone or iPad… in Sill's menu. Type the Mac's address (its Remote Access " +
-                        "address, e.g. over Tailscale), or paste the pairing link.",
+                        "address), or paste the pairing link.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(12.dp))
