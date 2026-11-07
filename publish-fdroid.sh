@@ -18,7 +18,7 @@ CONF=${FDROID_CONFIG:-$HOME/.config/sill-android/fdroid.conf}
 for v in FDROID_HOST FDROID_REPO_DIR FDROID_UPDATE; do
     eval "[ -n \"\${$v}\" ]" || { echo "$CONF doesn't set $v." >&2; exit 1; }
 done
-APP=dev.mrkcnd.sillclient
+APP=dev.mrkcnd.zill
 KEY=${SILL_KEYSTORE_PROPERTIES:-$HOME/.config/sill-android/keystore.properties}
 
 [ -f "$KEY" ] || { echo "No release key at $KEY: F-Droid updates need the same key every time." >&2; exit 1; }

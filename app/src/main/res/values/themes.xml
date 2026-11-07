@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.SillClient" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Zill" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 </resources>

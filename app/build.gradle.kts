@@ -14,16 +14,16 @@ val releaseKey: Properties? = (System.getenv("SILL_KEYSTORE_PROPERTIES")
     .let(::File).takeIf { it.isFile }?.let { f -> Properties().apply { f.inputStream().use(::load) } }
 
 android {
-    namespace = "dev.mrkcnd.sillclient"
+    namespace = "dev.mrkcnd.zill"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.mrkcnd.sillclient"
+        applicationId = "dev.mrkcnd.zill"
         // TLS 1.3 and SSLParameters.setApplicationProtocols (ALPN) both need Android 10.
         minSdk = 29
         targetSdk = 35
-        versionCode = 20
-        versionName = "0.5.4"
+        versionCode = 21
+        versionName = "0.5.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

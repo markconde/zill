@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "SillAndroid"
+rootProject.name = "Zill"
 include(":app")
