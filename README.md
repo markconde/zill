@@ -30,7 +30,11 @@ Not affiliated with or endorsed by the Sill project.
   - Long-press and drag to click-and-drag.
   - Three-finger swipe for Mission Control, App Exposé and Spaces.
   - A connected mouse, trackpad or hardware keyboard works as itself.
-  - Soft keyboard, plus a key row with esc, tab, arrows and latching ⌘ ⌥ ⌃ ⇧ for shortcuts.
+  - Soft keyboard, plus a key row with esc, tab, arrows and latching ⌘ ⌥ ⌃ ⇧ for shortcuts. Any
+    language and input method types (accents, Pinyin, kana, Hangul, emoji, dictation), as Sill's
+    TextComposition: the keyboard edits a copy of what it typed since the Mac's caret last moved,
+    text being composed stays on the device until chosen, and each change goes as backspaces and
+    text (TextMirror). A click, a key from the row or a hardware keyboard, or a Return starts it again.
 - **The Mac's pointer**: drawn in the Mac's cursor shape (kind 14) while the Mac's own mouse, or
   another device, moved it last (kind 26, stale reports dropped by `seen`), as in Sill's own app.
   This device's touches and keys hide it. A connected mouse shows the Mac's cursor shape as its

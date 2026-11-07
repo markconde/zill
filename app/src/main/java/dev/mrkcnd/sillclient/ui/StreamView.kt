@@ -26,6 +26,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import dev.mrkcnd.sillclient.input.Hid
 import dev.mrkcnd.sillclient.input.Mods
+import dev.mrkcnd.sillclient.input.TextMirror
 import dev.mrkcnd.sillclient.net.StreamSession
 import dev.mrkcnd.sillclient.protocol.CursorShape
 import dev.mrkcnd.sillclient.protocol.Gestures
@@ -311,6 +312,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
 
     /** Holds latched modifiers' keys around a click, as KeyChord does for a modified click. */
     private fun click(x: Float, y: Float, right: Boolean) {
+        forgetText()
         val mods = latched
         session?.sendInputs(Hid.down(0, mods).dropLast(1))
         pointer(PointerAction.MOVE, x, y)
@@ -360,6 +362,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
     private val longPress = Runnable {
         if (mode == Mode.PENDING) {
             mode = Mode.DRAG
+            forgetText()
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             pointer(PointerAction.MOVE, downX, downY)
             pointer(PointerAction.LEFT_DOWN, downX, downY)
@@ -627,76 +630,144 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
             return true
         }
         if (down && e.repeatCount > 0) return true // the Mac repeats a held key itself
+        if (down) forgetText()
         send(InputEvent.Key(usage, down, Mods.fromMeta(e.metaState)))
         return true
     }
 
-    /** One key pressed with what is latched (the key row, Return, Delete). */
+    /** One key pressed with what is latched (the key row, Return, Delete). It may move the Mac's caret. */
     fun typeKey(usage: Int) {
+        forgetText()
         session?.sendInputs(Hid.press(usage, latched))
         if (latched != 0L) spendLatch()
     }
 
-    /** Text from the soft keyboard: as text, or as shortcuts while ⌘, ⌃ or ⌥ is latched. */
-    fun typeText(text: CharSequence) {
-        if (text.isEmpty()) return
+    // MARK: the soft keyboard (TextComposition.swift)
+    //
+    // The keyboard gets an ordinary text field, so every language and input method works (a password
+    // field, as before, has Samsung Keyboard type English only): it edits `mirror`, a copy of what it
+    // typed since the Mac's caret last moved, and each change goes to the Mac as backspaces and text
+    // (TextMirror). What is still being composed (Pinyin, kana, a Korean syllable underlined) stays here
+    // until it is chosen. A click, a key from the row or a hardware keyboard, or a Return or a Tab typed
+    // may move the Mac's caret: the copy starts again then (`forgetText`).
+
+    private val mirror = android.text.SpannableStringBuilder().also { android.text.Selection.setSelection(it, 0) }
+    /** What the Mac has of `mirror`: its text without the part being composed, as last sent. */
+    private var sent = ""
+    private val imm get() = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+
+    /** The Mac's caret may have moved: what the keyboard typed before is no longer the keyboard's to revise. */
+    fun forgetText() {
+        if (mirror.isEmpty() && sent.isEmpty()) return
+        mirror.clear()
+        android.text.Selection.setSelection(mirror, 0)
+        sent = ""
+        imm.restartInput(this)
+    }
+
+    /** `mirror` without its composing span: what the Mac should have now. */
+    private fun committed(): String {
+        val a = BaseInputConnection.getComposingSpanStart(mirror)
+        val b = BaseInputConnection.getComposingSpanEnd(mirror)
+        if (a < 0 || b < 0 || a >= b) return mirror.toString()
+        return mirror.substring(0, a) + mirror.substring(b)
+    }
+
+    /** After the keyboard changed `mirror`: tell the Mac. */
+    private fun syncText() {
+        val now = committed()
+        if (now == sent) return
         val shortcut = latched and (Mods.COMMAND or Mods.CONTROL or Mods.OPTION)
-        if (shortcut != 0L) {
-            for (c in text) {
+        if (shortcut != 0L && now.length > sent.length && now.startsWith(sent)) {
+            // ⌘, ⌃ or ⌥ latched: the characters are a shortcut's keys, not text on the Mac.
+            for (c in now.substring(sent.length)) {
                 val (usage, shift) = Hid.forChar(c) ?: continue
                 session?.sendInputs(Hid.press(usage, latched or (if (shift) Mods.SHIFT else 0)))
             }
             spendLatch()
+            main.post { forgetText() }
+            sent = now
             return
         }
-        if (text.toString() == "\n") { typeKey(Hid.RETURN); return }
-        send(InputEvent.Text(text.toString()))
-        if (latched != 0L) spendLatch()
+        for (step in TextMirror.diff(sent, now)) when (step) {
+            is TextMirror.Step.Backspaces -> repeat(step.count.coerceAtMost(256)) { session?.sendInputs(Hid.press(Hid.BACKSPACE, 0)) }
+            is TextMirror.Step.Text -> send(InputEvent.Text(step.text))
+            is TextMirror.Step.Key -> session?.sendInputs(Hid.press(step.usage, 0))
+        }
+        if (latched != 0L && now.length > sent.length) spendLatch()
+        val added = if (now.startsWith(sent)) now.substring(sent.length) else now
+        sent = now
+        // A Return or a Tab: what went before may be past the Mac's caret now (a chat sent it).
+        if (TextMirror.endsRevision(added)) main.post { forgetText() }
     }
 
     fun showKeyboard() {
         requestFocus()
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
     }
 
     fun hideKeyboard() {
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(windowToken, 0)
     }
 
     override fun onCheckIsTextEditor(): Boolean = true
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        // A visible-password field: the keyboard commits each character as it is typed, with no
-        // suggestions or composition to undo on the Mac.
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
-            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
-        return object : BaseInputConnection(this, false) {
-            override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
-                typeText(text); return true
-            }
+        // Plain text without suggestions: every language and input method, accents held on a key,
+        // composition (Pinyin, kana, Hangul) and dictation; no autocorrect to retype on the Mac.
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            EditorInfo.IME_FLAG_NO_ENTER_ACTION
+        outAttrs.initialSelStart = android.text.Selection.getSelectionStart(mirror).coerceAtLeast(0)
+        outAttrs.initialSelEnd = android.text.Selection.getSelectionEnd(mirror).coerceAtLeast(0)
+        return object : BaseInputConnection(this, true) {
+            private var batch = 0
+            override fun getEditable(): android.text.Editable = mirror
+            private fun after(ok: Boolean): Boolean { if (batch == 0) syncText(); return ok }
 
-            private var composing: CharSequence = ""
-            override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
-                composing = text; return true
-            }
+            override fun beginBatchEdit(): Boolean { batch++; return true }
+            override fun endBatchEdit(): Boolean { batch = (batch - 1).coerceAtLeast(0); if (batch == 0) syncText(); return batch > 0 }
 
-            override fun finishComposingText(): Boolean {
-                if (composing.isNotEmpty()) typeText(composing)
-                composing = ""
-                return true
-            }
+            override fun commitText(text: CharSequence, newCursorPosition: Int) = after(super.commitText(text, newCursorPosition))
+            override fun setComposingText(text: CharSequence, newCursorPosition: Int) = after(super.setComposingText(text, newCursorPosition))
+            override fun setComposingRegion(start: Int, end: Int) = after(super.setComposingRegion(start, end))
+            override fun finishComposingText() = after(super.finishComposingText())
+            override fun setSelection(start: Int, end: Int) = after(super.setSelection(start, end))
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                repeat(beforeLength.coerceIn(0, 64)) { typeKey(Hid.BACKSPACE) }
-                repeat(afterLength.coerceIn(0, 64)) { typeKey(Hid.DELETE_FORWARD) }
+                // What the copy doesn't have (typed before the keyboard opened, or before a Return)
+                // is deleted on the Mac all the same: a backspace on an empty field.
+                val cursor = android.text.Selection.getSelectionStart(mirror).coerceAtLeast(0)
+                val extraBefore = (beforeLength - cursor).coerceIn(0, 64)
+                val extraAfter = (afterLength - (mirror.length - cursor)).coerceIn(0, 64)
+                val ok = super.deleteSurroundingText(beforeLength, afterLength)
+                after(ok)
+                repeat(extraBefore) { session?.sendInputs(Hid.press(Hid.BACKSPACE, 0)) }
+                repeat(extraAfter) { session?.sendInputs(Hid.press(Hid.DELETE_FORWARD, 0)) }
                 return true
             }
 
             override fun sendKeyEvent(event: KeyEvent): Boolean {
-                if (event.action == KeyEvent.ACTION_DOWN) Hid.forKeyCode(event.keyCode)?.let { typeKey(it) }
+                if (event.action != KeyEvent.ACTION_DOWN) return true
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DEL -> {
+                        // The keyboard's backspace: out of the copy when it has the character, so
+                        // the two agree; else straight to the Mac.
+                        val end = android.text.Selection.getSelectionEnd(mirror)
+                        val start = android.text.Selection.getSelectionStart(mirror)
+                        if (BaseInputConnection.getComposingSpanStart(mirror) < 0 && end > 0) {
+                            if (start != end) mirror.delete(minOf(start, end), maxOf(start, end))
+                            else mirror.delete(Character.offsetByCodePoints(mirror, end, -1), end)
+                            syncText()
+                        } else session?.sendInputs(Hid.press(Hid.BACKSPACE, latched))
+                    }
+                    KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> typeKey(Hid.RETURN)
+                    else -> {
+                        val ch = event.unicodeChar
+                        if (ch > 0 && !Character.isISOControl(ch)) commitText(String(Character.toChars(ch)), 1)
+                        else Hid.forKeyCode(event.keyCode)?.let { typeKey(it) }
+                    }
+                }
                 return true
             }
 
