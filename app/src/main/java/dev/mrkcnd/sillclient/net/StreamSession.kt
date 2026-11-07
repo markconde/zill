@@ -16,6 +16,11 @@ import dev.mrkcnd.sillclient.protocol.WindowList
 import dev.mrkcnd.sillclient.protocol.clientStatsJson
 import dev.mrkcnd.sillclient.protocol.gestureJson
 import dev.mrkcnd.sillclient.protocol.helloJson
+import dev.mrkcnd.sillclient.protocol.MacMenu
+import dev.mrkcnd.sillclient.protocol.MenuItem
+import dev.mrkcnd.sillclient.protocol.fetchMenuJson
+import dev.mrkcnd.sillclient.protocol.menuRows
+import dev.mrkcnd.sillclient.protocol.pressMenuItemJson
 import dev.mrkcnd.sillclient.protocol.AudioMessage
 import dev.mrkcnd.sillclient.protocol.CursorShape
 import dev.mrkcnd.sillclient.audio.AudioPlayer
@@ -115,6 +120,81 @@ class StreamSession(
     private var lastViewport: JSONObject? = null
     private var subscribedClipboard = false
 
+    // MARK: the Mac's menus (kinds 24, 25, 27)
+
+    /** The streamed app's menu bar as the Mac last sent it; null until the first one (an older Mac sends none). */
+    val macMenu = MutableStateFlow<MacMenu?>(null)
+    /** A refused choice, for a one-line notice; the UI clears it once shown. */
+    val menuNotice = MutableStateFlow<String?>(null)
+
+    /** What opening one menu gives: its rows, or a note to show instead (or above them, when stale). */
+    class MenuContents(val items: List<MenuItem>, val more: Int, val note: String?, val stale: Boolean)
+
+    private val menuTokens = java.util.concurrent.atomic.AtomicInteger(0)
+    private var menusAsked = false
+    private class PendingFetch(val version: Int?, val done: (MenuContents) -> Unit)
+    private val pendingFetches = java.util.concurrent.ConcurrentHashMap<Int, PendingFetch>()
+    private val pendingPresses = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    private val menusChanged = "The menus changed. Open the menu again."
+
+    /**
+     * One menu's items, fetched now (the Mac reads it from at most 1 s ago). `done` runs once, on
+     * the session's reader or timer thread: with the items, the Mac's note, or a timeout's words.
+     */
+    fun fetchMenu(item: MenuItem, version: Int?, done: (MenuContents) -> Unit) {
+        val top = macMenu.value
+        val id = item.id
+        when {
+            top == null || id == null -> { done(MenuContents(emptyList(), 0, "Not connected.", false)); return }
+            top.version != version -> { done(MenuContents(emptyList(), 0, menusChanged, false)); return }
+            top.stale -> { done(MenuContents(emptyList(), 0, top.note ?: "The app isn't answering.", true)); return }
+        }
+        val token = menuTokens.incrementAndGet()
+        pendingFetches[token] = PendingFetch(version, done)
+        send(Kind.FETCH_MENU, fetchMenuJson(token, version, id, item.title).toString().toByteArray())
+        val wait = maxOf(4000L, 4L * (rttMs.value.toLong()))
+        runCatching {
+            timers.schedule({
+                pendingFetches.remove(token)?.done?.invoke(
+                    MenuContents(emptyList(), 0, "${windowList.value?.macName?.ifBlank { null } ?: "The Mac"} didn’t answer. Open the menu again.", false))
+            }, wait, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    /** Choose an item. Never a disabled one; while the app isn't answering, refused here, unsent. */
+    fun pressMenuItem(item: MenuItem, version: Int?) {
+        val top = macMenu.value ?: return
+        val id = item.id ?: return
+        if (!item.enabled || item.submenu || item.separator) return
+        if (top.stale) { menuNotice.value = top.note ?: "The app isn't answering."; return }
+        val token = menuTokens.incrementAndGet()
+        pendingPresses += token
+        send(Kind.PRESS_MENU_ITEM, pressMenuItemJson(token, version, id, item.title).toString().toByteArray())
+    }
+
+    private fun onMacMenu(m: MacMenu) {
+        if (m.isTopLevel) {
+            val was = macMenu.value?.version
+            macMenu.value = m
+            if (was != m.version) {
+                // A new version: every menu still being fetched names a place in the old tree.
+                for (t in pendingFetches.keys.toList()) {
+                    val f = pendingFetches[t] ?: continue
+                    if (f.version != m.version) pendingFetches.remove(t)?.done?.invoke(MenuContents(emptyList(), 0, menusChanged, false))
+                }
+            }
+        }
+        val token = m.answering ?: return
+        pendingFetches.remove(token)?.let { f ->
+            val contents = if (m.version != f.version) MenuContents(emptyList(), 0, menusChanged, false)
+            else MenuContents(menuRows(m.items ?: emptyList()), m.more, m.note, m.stale)
+            f.done(contents)
+        }
+        if (pendingPresses.remove(token) && m.pressed == false) {
+            menuNotice.value = m.note ?: "The Mac didn’t choose that item."
+        }
+    }
+
     fun start(initialSource: StreamSource) {
         source = initialSource
         thread(name = "sill-read") { run() }
@@ -183,7 +263,13 @@ class StreamSession(
                     subscribedClipboard = true
                     send(Kind.CLIPBOARD, "{}".toByteArray())
                 }
+                // The menus: asked once, after the first window list; an older Mac ignores it.
+                if (!menusAsked) {
+                    menusAsked = true
+                    send(Kind.FETCH_MENU, fetchMenuJson(menuTokens.incrementAndGet()).toString().toByteArray())
+                }
             }
+            Kind.MAC_MENU -> MacMenu.parse(p)?.let(::onMacMenu)
             Kind.THUMBNAIL -> dev.mrkcnd.sillclient.protocol.ImageBlob.thumbnail(p)?.let { (id, jpeg) ->
                 BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.let { thumbnails.value = thumbnails.value + (id to it) }
             }
@@ -314,6 +400,8 @@ class StreamSession(
 
     private fun shutdown() {
         closed = true
+        // Every menu still opening ends here (its timeout's timer goes with the session).
+        for (t in pendingFetches.keys.toList()) pendingFetches.remove(t)?.done?.invoke(MenuContents(emptyList(), 0, "Not connected.", false))
         pinger?.cancel(false); stats?.cancel(false)
         timers.shutdownNow()
         writer.shutdown()

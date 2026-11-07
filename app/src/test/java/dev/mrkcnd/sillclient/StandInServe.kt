@@ -179,6 +179,32 @@ class StandInServe {
                         }
                     }
                     Kind.INPUT -> { inputsRead.incrementAndGet(); lastInputAt.set(System.currentTimeMillis()); say("kind 8 ${String(m.payload).take(300)}") }
+                    Kind.FETCH_MENU -> {
+                        val q = JSONObject(String(m.payload))
+                        val token = q.optInt("token")
+                        if (!q.has("id")) {
+                            say("kind 27 subscribe")
+                            send(Kind.MAC_MENU, JSONObject().put("version", 1).put("app", "TextEdit").put("bundleID", "com.apple.TextEdit")
+                                .put("answering", token).put("menus", JSONArray(MENUS.keys.filter { !it.contains('.') }.map { id ->
+                                    JSONObject().put("id", id).put("title", TITLES[id]).put("submenu", true) })).toString().toByteArray())
+                        } else {
+                            val id = q.getString("id")
+                            say("kind 27 fetch $id \"${q.optString("title")}\" v${q.optInt("version")}")
+                            val ok = q.optInt("version") == 1 && TITLES[id] == q.optString("title") && MENUS[id] != null
+                            val a = JSONObject().put("version", 1).put("answering", token).put("menu", id)
+                            if (ok) a.put("items", JSONArray(MENUS[id]!!)) else a.put("note", "The menus changed. Open the menu again.")
+                            send(Kind.MAC_MENU, a.toString().toByteArray())
+                        }
+                    }
+                    Kind.PRESS_MENU_ITEM -> {
+                        val q = JSONObject(String(m.payload))
+                        val id = q.optString("id")
+                        val ok = q.optInt("version") == 1 && ITEM_TITLES[id] == q.optString("title")
+                        say("kind 25 press $id \"${q.optString("title")}\" → ${if (ok) "pressed" else "refused"}")
+                        val a = JSONObject().put("version", 1).put("answering", q.optInt("token")).put("pressed", ok)
+                        if (!ok) a.put("note", "That item changed on the Mac.")
+                        send(Kind.MAC_MENU, a.toString().toByteArray())
+                    }
                     Kind.SELECT_SOURCE -> { say("kind 6 ${String(m.payload)}"); list(JSONObject(String(m.payload))) }
                     Kind.KEYFRAME_REQUEST -> { keyframeWanted.set(true); say("kind 44 keyframe request") }
                     else -> say("kind ${m.kind} ${String(m.payload).take(300)}")
@@ -188,6 +214,26 @@ class StandInServe {
             running.set(false)
         }
     }
+
+    // A TextEdit-like menu bar for kinds 24/25/27: ids as Sill makes them (indexes from the menu bar,
+    // the Apple menu 0), submenus, shortcuts, marks, a disabled item and separators.
+    private fun item(id: String, title: String, key: String? = null, enabled: Boolean = true, mark: String? = null, submenu: Boolean = false) =
+        JSONObject().put("id", id).put("title", title).apply {
+            if (key != null) put("key", key); if (!enabled) put("enabled", false); if (mark != null) put("mark", mark); if (submenu) put("submenu", true)
+        }
+    private fun sep() = JSONObject().put("separator", true)
+    private val TITLES = mapOf("1" to "TextEdit", "2" to "File", "3" to "Edit", "4" to "Format", "2.2" to "Open Recent", "4.0" to "Font")
+    private val MENUS: Map<String, List<JSONObject>> = linkedMapOf(
+        "1" to listOf(item("1.0", "About TextEdit"), sep(), item("1.2", "Settings…", "⌘,"), sep(), item("1.4", "Quit TextEdit", "⌘Q")),
+        "2" to listOf(item("2.0", "New", "⌘N"), item("2.1", "Open…", "⌘O"), item("2.2", "Open Recent", submenu = true), sep(),
+            item("2.4", "Close", "⌘W"), item("2.5", "Save…", "⌘S"), item("2.6", "Print…", "⌘P", enabled = false)),
+        "3" to listOf(item("3.0", "Undo Typing", "⌘Z"), item("3.1", "Redo", "⇧⌘Z", enabled = false), sep(),
+            item("3.3", "Cut", "⌘X"), item("3.4", "Copy", "⌘C"), item("3.5", "Paste", "⌘V")),
+        "4" to listOf(item("4.0", "Font", submenu = true), sep(), item("4.2", "Wrap to Page", mark = "✓"), item("4.3", "Make Plain Text", "⇧⌘T")),
+        "2.2" to listOf(item("2.2.0", "notes.txt"), item("2.2.1", "todo.txt"), sep(), item("2.2.3", "Clear Menu")),
+        "4.0" to listOf(item("4.0.0", "Show Fonts", "⌘T"), item("4.0.1", "Bold", "⌘B"), item("4.0.2", "Italic", "⌘I")),
+    )
+    private val ITEM_TITLES: Map<String, String> = MENUS.values.flatten().filter { it.has("id") }.associate { it.getString("id") to it.getString("title") }
 
     /** An arrow cursor as kind 14 carries it: hotspot and size in points (Float32 BE), then a 2× PNG. */
     private fun cursorBlob(): ByteArray {

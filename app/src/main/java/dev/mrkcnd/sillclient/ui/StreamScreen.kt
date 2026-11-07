@@ -94,6 +94,9 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
     val macPointer by session.macPointer.collectAsState()
     val cursorShape by session.cursorShape.collectAsState()
     var muted by remember { mutableStateOf(session.audio.muted) }
+    val macMenu by session.macMenu.collectAsState()
+    val menuNotice by session.menuNotice.collectAsState()
+    var showMenus by remember { mutableStateOf(false) }
     var view by remember { mutableStateOf<StreamView?>(null) }
     var showBar by remember { mutableStateOf(true) }
     var showPicker by remember { mutableStateOf(false) }
@@ -142,6 +145,9 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                 onHide = { showBar = false },
             )
             KeyRow(
+                // The Mac's menus lead the row, as its menu bar does; only once the Mac sent a top level.
+                menuApp = macMenu?.takeIf { !it.menus.isNullOrEmpty() || it.note != null }?.let { it.app ?: "Menus" },
+                onMenus = { showMenus = true },
                 latched = latched,
                 gestures = (list?.gestures ?: 0) >= 1,
                 onLatch = { flag -> latched = latched xor flag; view?.latched = latched },
@@ -220,6 +226,17 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
             text = { Text(ended.message) },
             confirmButton = { TextButton(onClick = onClose) { Text("OK") } },
         )
+    }
+
+    // A choice the Mac refused (or the app not answering): one line, then gone.
+    LaunchedEffect(menuNotice) {
+        menuNotice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); session.menuNotice.value = null }
+    }
+
+    if (showMenus) {
+        ModalBottomSheet(onDismissRequest = { showMenus = false }) {
+            MenuSheet(session, onDone = { showMenus = false })
+        }
     }
 
     if (showPicker) {
@@ -303,12 +320,13 @@ private fun TextScaleButton(scale: Double?, enabled: Boolean, onPick: (Double?) 
 }
 
 @Composable
-private fun KeyRow(latched: Long, gestures: Boolean, onLatch: (Long) -> Unit, onKey: (Int) -> Unit, onGesture: (String) -> Unit) {
+private fun KeyRow(menuApp: String?, onMenus: () -> Unit, latched: Long, gestures: Boolean, onLatch: (Long) -> Unit, onKey: (Int) -> Unit, onGesture: (String) -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Color(0xFF2C2C2E)).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (menuApp != null) Cap("≡ $menuApp") { onMenus() }
         Cap("esc") { onKey(Hid.ESCAPE) }
         Cap("tab") { onKey(Hid.TAB) }
         Latch("⌘", latched and Mods.COMMAND != 0L) { onLatch(Mods.COMMAND) }

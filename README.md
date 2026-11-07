@@ -42,6 +42,10 @@ Not affiliated with or endorsed by the Sill project.
 - **Pinch to zoom**: 1× to 5× about the fingers, as Sill's StreamZoom. Two fingers on a zoomed
   picture move it; a two-finger drag on the whole picture still scrolls the Mac. Taps and scrolls
   land on what's under the finger at any zoom. Pinch all the way out for the whole picture.
+- **The Mac's menus** (Sill 0.6.0+): "≡ ‹app›" at the start of the key row opens the streamed
+  app's menu bar (kinds 24/25/27): menus fetched from the Mac as they open, submenus, shortcuts,
+  ✓ marks and disabled items as the Mac shows them. Choosing an item presses it on the Mac, by id
+  and title within the menus' version, so a menu that changed meanwhile is refused, not misclicked.
 - **Windows and apps**: the window list with thumbnails, picking a window or the Desktop, and
   Close, Minimize and Full Screen on long-press. Apps opens any installed app.
 - **Clipboard**: text copied on the Mac lands on Android. Paste sends Android's clipboard to
@@ -54,7 +58,7 @@ Not affiliated with or endorsed by the Sill project.
 
 ## Not yet
 
-The Mac's menus (24/25/27), the host settings panel (16/17), the portrait trackpad, QR scanning
+The host settings panel (16/17), the portrait trackpad, QR scanning
 (paste the link instead), composed text (accents, non-US layouts), the USB-cable path, and Direct
 Wireless.
 
@@ -82,7 +86,7 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Android 10 (API 29) or l
   code paired, then a pinned session (hello first, source, viewport, window list, clipboard
   subscription, goodbye), and a wrong pin refused before any byte is sent.
 - `StandInServe` (skipped by default) runs that stand-in Mac on port 17455 and streams a looping
-  HEVC test clip, an AAC-ELD tone (`testclip.eld`, made by `tools/eld-clip.swift` with
+  HEVC test clip, a TextEdit-like menu bar, an AAC-ELD tone (`testclip.eld`, made by `tools/eld-clip.swift` with
   AudioToolbox, as Sill's AudioEncoder makes it), an arrow cursor and a pointer that circles the
   picture whenever the device leaves it alone for 2 s. Its key is kept in `build/standin-key.p12`,
   so it stays paired across runs:

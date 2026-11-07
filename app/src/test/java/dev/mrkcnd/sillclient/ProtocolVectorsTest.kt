@@ -15,6 +15,10 @@ import dev.mrkcnd.sillclient.protocol.CursorShape
 import dev.mrkcnd.sillclient.protocol.Esds
 import dev.mrkcnd.sillclient.protocol.helloJson
 import dev.mrkcnd.sillclient.protocol.parseMacPointer
+import dev.mrkcnd.sillclient.protocol.MacMenu
+import dev.mrkcnd.sillclient.protocol.fetchMenuJson
+import dev.mrkcnd.sillclient.protocol.menuRows
+import dev.mrkcnd.sillclient.protocol.pressMenuItemJson
 import dev.mrkcnd.sillclient.video.HevcDecoder
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -152,6 +156,30 @@ class ProtocolVectorsTest {
         assertEquals(0.4213 to 0.1873, on.position); assertEquals(12L, on.seen)
         assertEquals(null, parseMacPointer("""{"inside":false,"seen":12}""".toByteArray())!!.position)
         assertEquals(null, parseMacPointer("{}".toByteArray())!!.position)
+    }
+
+    /** Kind 24's three shapes (MacMenu.swift), and the top level held to what Sill's MacMenuState keeps. */
+    @Test fun mac_menu_messages() {
+        val top = MacMenu.parse("""{"version":3,"app":"Safari","bundleID":"com.apple.Safari","answering":1,
+            "menus":[{"id":"1","title":"Safari","submenu":true},{"id":"2","title":"File","submenu":true},
+            {"id":"02","title":"Bad id"},{"id":"2","title":"Duplicate"},{"id":"3","title":""},{"id":"4.1","title":"Two parts"}]}""".toByteArray())!!
+        assertTrue(top.isTopLevel); assertEquals(3, top.version); assertEquals("Safari", top.app)
+        assertEquals(listOf("Safari", "File"), top.menus!!.map { it.title })
+        val menu = MacMenu.parse("""{"version":3,"answering":7,"menu":"2","more":4,"items":[
+            {"separator":true},{"id":"2.0","title":"New Window","key":"⌘N"},{"id":"2.1","title":"Recent","submenu":true},
+            {"separator":true},{"separator":true},{"id":"2.4","title":"Show Tabs","mark":"✓","enabled":false},
+            {"id":"2.5","title":"Mixed","mark":"-"},{"id":"2.6","title":""},{"separator":true}]}""".toByteArray())!!
+        assertFalse(menu.isTopLevel); assertEquals(7, menu.answering); assertEquals(4, menu.more)
+        val rows = menuRows(menu.items!!)
+        assertEquals(listOf("New Window", "Recent", "", "Show Tabs", "Mixed"), rows.map { it.title })
+        assertTrue(rows[2].separator); assertEquals("⌘N", rows[0].key); assertTrue(rows[1].submenu)
+        assertFalse(rows[3].enabled); assertEquals("✓", rows[3].mark); assertTrue(rows[4].mixed)
+        val refused = MacMenu.parse("""{"version":3,"answering":9,"pressed":false,"note":"The menus changed."}""".toByteArray())!!
+        assertEquals(false, refused.pressed); assertEquals("The menus changed.", refused.note)
+        // Kind 27 without an id subscribes; with one it names the menu by id and title in a version.
+        assertEquals("""{"token":1}""", fetchMenuJson(1).toString())
+        val f = fetchMenuJson(2, 3, "2", "File"); assertEquals("2", f.getString("id")); assertEquals(3, f.getInt("version")); assertEquals("File", f.getString("title"))
+        val p = pressMenuItemJson(4, 3, "2.0", "New Window"); assertEquals("2.0", p.getString("id")); assertEquals(4, p.getInt("token"))
     }
 }
 
