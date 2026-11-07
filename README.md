@@ -97,7 +97,11 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Android 10 (API 29) or l
   In the app, choose Add a Mac, enter `10.0.2.2:17455` and the code `4829 1355 7208`. The
   stand-in logs every message it receives to `build/standin.log`.
 
-## Releases and F-Droid
+## Source and releases
+
+Tag each published version (`v0.2.1`, …).
+
+### F-Droid
 
 Release builds are signed with the key in `~/.config/sill-android/` (`keystore.properties` and
 `release.jks`, outside the project; `SILL_KEYSTORE_PROPERTIES` points elsewhere). Without it they
