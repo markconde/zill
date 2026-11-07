@@ -11,6 +11,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
@@ -278,11 +281,25 @@ private fun TopBar(
     onPaste: () -> Unit,
     onHide: () -> Unit,
 ) {
+    // An unreported camera over the bar: the buttons leave a gap just there, the title gives way.
+    val hole = cameraHole()
+    var bar by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val endPad = with(LocalDensity.current) { 4.dp.toPx() }
+    val margin = with(LocalDensity.current) { 4.dp.toPx() }
+    val gap = run {
+        val b = bar
+        if (hole == null || b == null || hole[3] <= b.top || hole[1] >= b.bottom) null
+        else {
+            val end = b.right - endPad
+            (end - hole[2] - margin).coerceAtLeast(0f)..(end - hole[0] + margin)
+        }
+    }
     Row(
-        // Clear of the camera cutout (the Fold's punch-hole, top or side as the phone turns): the bar's
-        // colour runs under it, its buttons don't.
+        // Clear of a reported camera cutout (top or side as the phone turns): the bar's colour runs
+        // under it, its buttons don't.
         Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))
             .windowInsetsPadding(cutoutInsets().only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .onGloballyPositioned { bar = it.boundsInWindow() }
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -291,6 +308,7 @@ private fun TopBar(
             Text(title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
             if (status.isNotEmpty()) Text(status, color = Color(0xFF9A9AA0), maxLines = 1, softWrap = false, overflow = TextOverflow.Clip, style = MaterialTheme.typography.labelSmall)
         }
+        GapRow(gap) {
         TextScaleButton(textScale, textScaleEnabled, onTextScale)
         IconButton(onClick = onMute, modifier = Modifier.size(40.dp)) {
             Icon(if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
@@ -300,6 +318,7 @@ private fun TopBar(
         IconButton(onClick = onPaste, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.ContentPaste, "Paste on the Mac", tint = Color.White) }
         IconButton(onClick = onKeyboard, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Keyboard, "Keyboard", tint = Color.White) }
         IconButton(onClick = onHide, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.VisibilityOff, "Hide controls", tint = Color.White) }
+        }
     }
 }
 
@@ -478,33 +497,69 @@ private fun PickerRow(
 }
 
 /**
- * Where the camera is, as insets: the window's display cutout, or the display's own; where a phone
- * reports neither (the Galaxy Z Fold8's inner screen), CameraGap's preset for it. Read again when the
- * phone turns or folds.
+ * Where the camera is, as insets: the window's display cutout, or the display's own. A camera the
+ * phone doesn't report (the Galaxy Z Fold8's inner screen) is cameraHole()'s instead: the top bar
+ * leaves a gap just there rather than giving up a whole row.
  */
 @Composable
 internal fun cutoutInsets(): WindowInsets {
     val view = LocalView.current
     val config = LocalConfiguration.current
+    val fromDisplay = remember(config, view.display) {
+        val c = view.display?.cutout
+        if (c == null) WindowInsets(0, 0, 0, 0) else WindowInsets(c.safeInsetLeft, c.safeInsetTop, c.safeInsetRight, c.safeInsetBottom)
+    }
     val ctx = LocalContext.current
     remember { CameraGap.load(ctx) }
-    val presetOn by CameraGap.on.collectAsState()
+    if (CameraGap.pretending) return WindowInsets(0, 0, 0, 0)
+    return WindowInsets.displayCutout.union(fromDisplay)
+}
+
+/**
+ * The unreported camera (CameraGap's preset) as left, top, right, bottom px in this window, or null:
+ * another phone, the cover screen, the switch off, or a phone that reports its cutout after all.
+ */
+@Composable
+internal fun cameraHole(): FloatArray? {
+    val view = LocalView.current
+    val config = LocalConfiguration.current
+    val ctx = LocalContext.current
+    remember { CameraGap.load(ctx) }
+    val on by CameraGap.on.collectAsState()
     val d = LocalDensity.current
     val dir = LocalLayoutDirection.current
     val w = WindowInsets.displayCutout
-    val windowReports = w.getLeft(d, dir) + w.getTop(d) + w.getRight(d, dir) + w.getBottom(d) > 0
-    val fromDisplay = remember(config, view.display, presetOn, windowReports) {
-        val c = view.display?.cutout
-        if (c != null) WindowInsets(c.safeInsetLeft, c.safeInsetTop, c.safeInsetRight, c.safeInsetBottom)
-        else if (windowReports) WindowInsets(0, 0, 0, 0)
-        else {
-            val size = CameraGap.realSize(view.display)
-            val rect = size?.let { (sw, sh) -> CameraGap.presetRect(view.display?.rotation ?: 0, sw, sh, config.smallestScreenWidthDp) }
-            if (rect == null || size == null) WindowInsets(0, 0, 0, 0)
-            else CameraGap.insetsFor(rect, size.first, size.second).let { WindowInsets(it[0], it[1], it[2], it[3]) }
-        }
+    val reported = view.display?.cutout != null || w.getLeft(d, dir) + w.getTop(d) + w.getRight(d, dir) + w.getBottom(d) > 0
+    return remember(config, view.display, on, reported) {
+        if (reported && !CameraGap.pretending) return@remember null
+        val size = CameraGap.realSize(view.display) ?: return@remember null
+        val r = CameraGap.presetRect(view.display?.rotation ?: 0, size.first, size.second, config.smallestScreenWidthDp) ?: return@remember null
+        val at = IntArray(2).also { view.rootView.getLocationOnScreen(it) }
+        floatArrayOf(r[0] - at[0], r[1] - at[1], r[2] - at[0], r[3] - at[1])
     }
-    return w.union(fromDisplay)
+}
+
+/**
+ * A row laid out from its end, as the bar's buttons are: a child that would cover the gap
+ * (`gapFromEnd`, px measured from the row's end) moves past it, and so do the ones before it.
+ */
+@Composable
+private fun GapRow(gapFromEnd: ClosedFloatingPointRange<Float>?, content: @Composable () -> Unit) {
+    Layout(content) { measurables, constraints ->
+        val ps = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
+        val height = ps.maxOfOrNull { it.height } ?: 0
+        val ends = IntArray(ps.size)
+        var cursor = 0
+        for (i in ps.indices.reversed()) {
+            var start = cursor
+            if (gapFromEnd != null && start + ps[i].width > gapFromEnd.start && start < gapFromEnd.endInclusive) {
+                start = kotlin.math.ceil(gapFromEnd.endInclusive).toInt()
+            }
+            ends[i] = start + ps[i].width
+            cursor = ends[i]
+        }
+        layout(cursor, height) { ps.forEachIndexed { i, p -> p.place(cursor - ends[i], (height - p.height) / 2) } }
+    }
 }
 
 /** For the Settings tab: what this screen reports, how it is turned, and what Android's configuration says. */

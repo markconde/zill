@@ -120,7 +120,7 @@ fun SettingsPanel(session: StreamSession) {
             CameraGap.load(ctx)
             val gapOn by CameraGap.on.collectAsState()
             Toggle("Leave room for the inner camera", gapOn) { CameraGap.set(ctx, it) }
-            Footnote("This phone’s inner screen doesn’t tell apps where its camera is, so Sill Client keeps the bars clear of where it sits on a Galaxy Z Fold8. This device only.")
+            Footnote("This phone’s inner screen doesn’t tell apps where its camera is, so Sill Client leaves a gap in the top bar where it sits on a Galaxy Z Fold8. This device only.")
         }
         Footnote(about)
     }

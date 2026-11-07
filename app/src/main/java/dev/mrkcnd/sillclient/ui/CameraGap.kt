@@ -30,12 +30,20 @@ object CameraGap {
     val on: StateFlow<Boolean> = _on
     private var loaded = false
 
+    /** A debug build with `files/pretend-fold8` (made with run-as): an emulator acts as the Fold8's inner screen, for testing. */
+    @Volatile private var pretend = false
+    /** Pretending: the emulator's own cutout is ignored too, as the Fold8 reports none. */
+    val pretending: Boolean get() = pretend
+
     /** This phone has a preset (the Fold8's inner screen), whatever screen is in use now. */
-    val hasPreset: Boolean get() = Build.MANUFACTURER.equals("samsung", true) && Build.MODEL.uppercase().startsWith("SM-F971")
+    val hasPreset: Boolean get() = pretend || Build.MANUFACTURER.equals("samsung", true) && Build.MODEL.uppercase().startsWith("SM-F971")
 
     fun load(context: Context) {
         if (loaded) return
         loaded = true
+        val app = context.applicationContext
+        pretend = (app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+            java.io.File(app.filesDir, "pretend-fold8").exists()
         _on.value = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, true)
     }
 
@@ -50,7 +58,7 @@ object CameraGap {
      * size as it is turned now.
      */
     fun presetRect(rotation: Int, w: Int, h: Int, smallestWidthDp: Int): FloatArray? {
-        if (!hasPreset || !_on.value || smallestWidthDp < 600) return null
+        if (!hasPreset || !_on.value || (smallestWidthDp < 600 && !pretend)) return null
         return fold8Rect(rotation, w, h)
     }
 
