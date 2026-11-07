@@ -50,7 +50,7 @@ fun SettingsPanel(session: StreamSession) {
     val h = state
     val ctx = androidx.compose.ui.platform.LocalContext.current
     // Which version runs here, and where this screen says its camera is: for checking a fix on a device.
-    val about = "Sill Client " + (runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?") +
+    val about = "Zill for Android " + (runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?") +
         " · camera cutout: " + cutoutReport()
     if (h == null) {
         Footnote("This Mac doesn’t share its settings with devices. Update Sill on the Mac to change them from here.")
@@ -120,7 +120,7 @@ fun SettingsPanel(session: StreamSession) {
             CameraGap.load(ctx)
             val gapOn by CameraGap.on.collectAsState()
             Toggle("Leave room for the inner camera", gapOn) { CameraGap.set(ctx, it) }
-            Footnote("This phone’s inner screen doesn’t tell apps where its camera is, so Sill Client leaves a gap in the top bar where it sits on a Galaxy Z Fold8. This device only.")
+            Footnote("This phone’s inner screen doesn’t tell apps where its camera is, so Zill leaves a gap in the top bar where it sits on a Galaxy Z Fold8. This device only.")
         }
         Footnote(about)
     }

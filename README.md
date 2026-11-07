@@ -1,6 +1,6 @@
-# Sill Client for Android
+# Zill for Android
 
-An unofficial Android client for [Sill](https://github.com/Saffsanity/sill): it shows a window
+Zill is an unofficial Android client for [Sill](https://github.com/Saffsanity/sill): it shows a window
 from your Mac, or its whole desktop, on an Android phone or tablet, and sends your touches and
 keys back. It talks to the Sill for Mac app you already run, speaking Sill's own wire protocol
 (`Sources/StreamProtocol` in the Sill repo). Nothing changes on the Mac.
