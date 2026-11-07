@@ -47,6 +47,12 @@ Not affiliated with or endorsed by the Sill project.
   trackpad, as Sill's portrait pad does. Drag to move the pointer (1.25 pictures for a stroke across
   it), tap to click where it is, two fingers to right-click and scroll there, touch and hold then move
   to drag. It carries on from the Mac's pointer when the Mac moved it last; zoomed, the view follows it.
+- **Split layout** (draft; the split button in the bar, shown when the screen is upright, remembered):
+  the Mac on the top half, down to the middle where the Fold's hinge is, and the bar, key row and
+  controls on the bottom. Two large buttons there: Trackpad slides up a trackpad (with Click, Right
+  click and Done; its handle puts it away), Keyboard opens the keyboard over that half, the Mac staying
+  in view. Touching the picture itself stays direct. Made by hand rather than by the hinge, which on
+  the Fold8 reads only 0, 90 and 180 degrees and springs to flat (see `../sensor-probe`).
 - **Pinch to zoom**: 1× to 5× about the fingers, as Sill's StreamZoom. Two fingers on a zoomed
   picture move it; a two-finger drag on the whole picture still scrolls the Mac. Taps and scrolls
   land on what's under the finger at any zoom. Pinch all the way out for the whole picture.

@@ -80,6 +80,36 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
             macPointer?.position?.let { (x, y) -> curX = x; curY = y }
             placeSprite()
         }
+    /**
+     * The split layout's trackpad is out (StreamScreen): this device's own pointer shows, and strokes
+     * from it (padTouch) move it as trackpad mode does, while touches on the picture stay direct.
+     */
+    var padOpen = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) macPointer?.position?.let { (x, y) -> curX = x; curY = y }
+            placeSprite()
+        }
+    /** The stroke in progress came from the split layout's trackpad. */
+    private var strokeFromPad = false
+    private var padNow = false
+    /** Touches move this device's pointer by how far they go, not to where they land. */
+    private val relative get() = trackpad || strokeFromPad
+    private val ownPointer get() = trackpad || padOpen
+
+    /** A touch on the split layout's trackpad, in its own coordinates: handled as trackpad mode handles the picture. */
+    fun padTouch(e: MotionEvent) {
+        padNow = true
+        try { onTouchEvent(e) } finally { padNow = false }
+    }
+
+    /** The split layout's click buttons: a click where this device's pointer is. */
+    fun padClick(right: Boolean) {
+        strokeFromPad = true
+        click(0f, 0f, right)
+    }
+
     /** This device's own pointer, a fraction of the picture: where trackpad mode moves and clicks. */
     private var curX = 0.5
     private var curY = 0.5
@@ -240,11 +270,11 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
     private var cursorIcon: PointerIcon? = null
 
     private fun placeSprite() {
-        val pos = if (trackpad) curX to curY else macPointer?.position
-        if (trackpad && (cursorShape == null || cursorBitmap == null) && sprite.drawable !== fallbackArrow) sprite.setImageDrawable(fallbackArrow)
-        val shape = cursorShape ?: if (trackpad) FALLBACK_SHAPE else null
+        val pos = if (ownPointer) curX to curY else macPointer?.position
+        if (ownPointer && (cursorShape == null || cursorBitmap == null) && sprite.drawable !== fallbackArrow) sprite.setImageDrawable(fallbackArrow)
+        val shape = cursorShape ?: if (ownPointer) FALLBACK_SHAPE else null
         val r = picRect()
-        if (pos == null || shape == null || (cursorBitmap == null && !trackpad) || r.width() <= 0) { sprite.visibility = GONE; return }
+        if (pos == null || shape == null || (cursorBitmap == null && !ownPointer) || r.width() <= 0) { sprite.visibility = GONE; return }
         // Mac points drawn 1:1 in device points (dp), whatever the zoom (HEVCDisplayView.setCursorShape).
         val w = (shape.width * density).toInt(); val h = (shape.height * density).toInt()
         val lp = sprite.layoutParams
@@ -278,7 +308,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
 
     /** Where an action at (x, y) on the view goes: there, or in trackpad mode where the pointer is. */
     private fun target(x: Float, y: Float): Pair<Double, Double> =
-        if (trackpad) curX to curY else fraction(x, y).also { (fx, fy) -> curX = fx; curY = fy }
+        if (relative) curX to curY else fraction(x, y).also { (fx, fy) -> curX = fx; curY = fy }
 
     private fun pointer(action: PointerAction, x: Float, y: Float) {
         val (fx, fy) = target(x, y)
@@ -384,6 +414,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
             MotionEvent.ACTION_DOWN -> {
                 stopMomentum()
                 requestFocus()
+                strokeFromPad = padNow
                 mode = Mode.PENDING
                 downX = e.x; downY = e.y; lastX = e.x; lastY = e.y
                 downTime = e.eventTime
@@ -420,7 +451,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
                 }
             }
             MotionEvent.ACTION_MOVE -> when (mode) {
-                Mode.PENDING -> if (hypot(e.x - downX, e.y - downY) > slop && trackpad) {
+                Mode.PENDING -> if (hypot(e.x - downX, e.y - downY) > slop && relative) {
                     main.removeCallbacks(longPress)
                     mode = Mode.PAD
                     padMove(e.x - downX, e.y - downY)      // the whole way from touch-down: nothing lost to the slop
@@ -434,7 +465,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
                 Mode.SCROLL -> { scrollBy(e.x - lastX, e.y - lastY, e.x, e.y); lastX = e.x; lastY = e.y }
                 Mode.PAD -> { padMove(e.x - lastX, e.y - lastY); lastX = e.x; lastY = e.y }
                 Mode.DRAG -> {
-                    if (trackpad) padMove(e.x - lastX, e.y - lastY) else pointer(PointerAction.MOVE, e.x, e.y)
+                    if (relative) padMove(e.x - lastX, e.y - lastY) else pointer(PointerAction.MOVE, e.x, e.y)
                     lastX = e.x; lastY = e.y
                 }
                 Mode.MULTI -> {

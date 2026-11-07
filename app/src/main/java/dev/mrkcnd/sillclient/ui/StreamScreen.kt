@@ -9,9 +9,14 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,6 +48,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DesktopMac
+import androidx.compose.material.icons.filled.HorizontalSplit
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.TouchApp
@@ -122,6 +128,12 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
     // Trackpad mode, kept for the next session: the picture is a laptop's trackpad.
     val prefs = remember { context.getSharedPreferences("stream", Context.MODE_PRIVATE) }
     var trackpad by remember { mutableStateOf(prefs.getBoolean("trackpad", false)) }
+    // Split layout, kept too: held upright, the Mac on the top half, the controls on the bottom.
+    var splitPref by remember { mutableStateOf(prefs.getBoolean("split", false)) }
+    val conf = LocalConfiguration.current
+    val upright = conf.screenHeightDp > conf.screenWidthDp
+    val split = splitPref && upright
+    var padOpen by remember { mutableStateOf(false) }
     val windowStreams = list?.active is StreamSource.Window
 
     KeepScreenOn()
@@ -137,8 +149,7 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Color.Black).imePadding()) {
-        if (showBar) {
+    val bars: @Composable () -> Unit = {
             TopBar(
                 title = list?.macName?.ifBlank { null } ?: title,
                 // The sound's state rides along: the line recomposes every second with the fps.
@@ -169,7 +180,15 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                         session.sendInputs(Hid.press(Hid.V, Mods.COMMAND))
                     }
                 },
-                onHide = { showBar = false },
+                onHide = if (split) null else ({ showBar = false }),
+                splitAvailable = upright,
+                split = split,
+                onSplit = {
+                    splitPref = !splitPref
+                    prefs.edit().putBoolean("split", splitPref).apply()
+                    if (!splitPref) padOpen = false
+                },
+                inMiddle = split,
             )
             KeyRow(
                 // The Mac's menus lead the row, as its menu bar does; only once the Mac sent a top level.
@@ -181,9 +200,10 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                 onKey = { usage -> view?.typeKey(usage) },
                 onGesture = { name -> session.gesture(name, 3) },
             )
-        }
+    }
+    val picture: @Composable (Modifier) -> Unit = { mod ->
         // Clipped: a zoomed picture is larger than its box and would otherwise cover the bars.
-        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+        Box(mod.fillMaxWidth().clipToBounds()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -199,11 +219,12 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                     v.latched = latched
                     v.textScale = textScale
                     v.trackpad = trackpad
+                    v.padOpen = split && padOpen
                     v.cursorShape = cursorShape
                     v.macPointer = macPointer
                 },
             )
-            if (!showBar) {
+            if (!showBar && !split) {
                 IconButton(
                     onClick = { showBar = true },
                     modifier = Modifier.align(Alignment.TopEnd)
@@ -240,6 +261,33 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+
+    if (split) {
+        // The top half is the Mac, down to the fold; the bottom half the bar, the key row and a
+        // space for the trackpad or the keyboard (which covers it, leaving the Mac in view).
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+            val half = maxHeight / 2
+            Column(Modifier.fillMaxSize()) {
+                picture(Modifier.height(half))
+                Column(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF1C1C1E)).imePadding()) {
+                    bars()
+                    SplitControls(
+                        padOpen = padOpen,
+                        onPad = { padOpen = it },
+                        onKeyboard = { padOpen = false; view?.showKeyboard() },
+                        onTouch = { e -> view?.padTouch(e) },
+                        onClick = { right -> view?.padClick(right) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    } else {
+        Column(Modifier.fillMaxSize().background(Color.Black).imePadding()) {
+            if (showBar) bars()
+            picture(Modifier.weight(1f))
         }
     }
 
@@ -295,7 +343,11 @@ private fun TopBar(
     trackpad: Boolean,
     onTrackpad: () -> Unit,
     onPaste: () -> Unit,
-    onHide: () -> Unit,
+    onHide: (() -> Unit)?,
+    splitAvailable: Boolean,
+    split: Boolean,
+    onSplit: () -> Unit,
+    inMiddle: Boolean,
 ) {
     // An unreported camera over the bar: the buttons leave a gap just there, the title gives way.
     val hole = cameraHole()
@@ -314,7 +366,7 @@ private fun TopBar(
         // Clear of a reported camera cutout (top or side as the phone turns): the bar's colour runs
         // under it, its buttons don't.
         Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))
-            .windowInsetsPadding(cutoutInsets().only(if (hole != null) WindowInsetsSides.Horizontal else WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .windowInsetsPadding(cutoutInsets().only(if (hole != null || inMiddle) WindowInsetsSides.Horizontal else WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .onGloballyPositioned { bar = it.boundsInWindow() }
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -338,9 +390,108 @@ private fun TopBar(
         IconButton(onClick = onWindows, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.ViewQuilt, "Windows and apps", tint = Color.White) }
         IconButton(onClick = onPaste, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.ContentPaste, "Paste on the Mac", tint = Color.White) }
         IconButton(onClick = onKeyboard, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Keyboard, "Keyboard", tint = Color.White) }
-        IconButton(onClick = onHide, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.VisibilityOff, "Hide controls", tint = Color.White) }
+        if (splitAvailable) IconButton(onClick = onSplit, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.HorizontalSplit, if (split) "Split layout: switch off" else "Split layout: the Mac on top, controls below",
+                tint = if (split) Color(0xFF8AB4FF) else Color.White)
+        }
+        if (onHide != null) IconButton(onClick = onHide, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.VisibilityOff, "Hide controls", tint = Color.White) }
         }
     }
+}
+
+/**
+ * The split layout's lower space: two large buttons, Trackpad and Keyboard; the trackpad slides up
+ * in their place, with click buttons, and goes away with its handle (tap or swipe it down) or Done.
+ * Keeps clear of the inner camera where it lands (the right edge of this half, held the usual way).
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun SplitControls(
+    padOpen: Boolean,
+    onPad: (Boolean) -> Unit,
+    onKeyboard: () -> Unit,
+    onTouch: (android.view.MotionEvent) -> Unit,
+    onClick: (right: Boolean) -> Unit,
+    modifier: Modifier,
+) {
+    val hole = cameraHole()
+    val density = LocalDensity.current
+    var box by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val (startPad, endPad) = run {
+        val b = box; val h = hole
+        if (b == null || h == null || h[3] <= b.top || h[1] >= b.bottom) 0.dp to 0.dp
+        else with(density) {
+            val m = 6.dp.toPx()
+            if (h[0] - b.left < b.right - h[2]) (h[2] - b.left + m).toDp() to 0.dp else 0.dp to (b.right - h[0] + m).toDp()
+        }
+    }
+    Box(modifier.fillMaxWidth().onGloballyPositioned { box = it.boundsInWindow() }
+        .padding(start = 10.dp + startPad, end = 10.dp + endPad, top = 8.dp, bottom = 10.dp)) {
+        // Squeezed by the keyboard to a sliver: nothing, rather than buttons too flat to read.
+        val roomy = box?.let { with(density) { it.height.toDp() } >= 120.dp } ?: true
+        if (!padOpen && roomy) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BigButton("Trackpad", Icons.Default.TouchApp, Modifier.weight(1f)) { onPad(true) }
+            BigButton("Keyboard", Icons.Default.Keyboard, Modifier.weight(1f), onKeyboard)
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = padOpen,
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+        ) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // The handle, above the pad: tap it, or swipe down from it, to put the trackpad away.
+                Box(
+                    Modifier.fillMaxWidth().height(22.dp).handle(onClose = { onPad(false) }),
+                    contentAlignment = Alignment.Center,
+                ) { Box(Modifier.size(width = 48.dp, height = 5.dp).background(Color(0xFF6A6A70), RoundedCornerShape(3.dp))) }
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().background(Color(0xFF2C2C2E), RoundedCornerShape(14.dp))
+                        .padTouches(onTouch),
+                ) {
+                    Text("Trackpad", Modifier.align(Alignment.Center), color = Color(0xFF5A5A60), style = MaterialTheme.typography.titleMedium)
+                }
+                Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PadButton("Click", Modifier.weight(1f)) { onClick(false) }
+                    PadButton("Right click", Modifier.weight(1f)) { onClick(true) }
+                    PadButton("Done", Modifier.width(88.dp)) { onPad(false) }
+                }
+            }
+        }
+    }
+}
+
+/** Touches go to the stream view's trackpad as they come (its own gestures: move, tap, two fingers, hold). */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+private fun Modifier.padTouches(onTouch: (android.view.MotionEvent) -> Unit): Modifier =
+    this.then(Modifier.pointerInteropFilter { e -> onTouch(e); true })
+
+private fun Modifier.handle(onClose: () -> Unit): Modifier = this.then(
+    Modifier.pointerInput(Unit) {
+        var total = 0f
+        detectVerticalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = { if (total > 24.dp.toPx()) onClose() },
+        ) { _, dy -> total += dy }
+    }.pointerInput(Unit) { detectTapGestures { onClose() } }
+)
+
+@Composable
+private fun BigButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.fillMaxSize().background(Color(0xFF2C2C2E), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
+        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(36.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(label, color = Color.White, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun PadButton(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(modifier.fillMaxSize().background(Color(0xFF2C2C2E), RoundedCornerShape(12.dp)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center) { Text(label, color = Color.White) }
 }
 
 /** Sill's Aa detents: Off, then 0.5× to 1.5× in 0.25 steps. */
