@@ -50,6 +50,13 @@ import kotlin.math.hypot
  *
  * The Mac's pointer shows as a sprite only while the Mac (or another device) moved it last, as in
  * Sill's own app (PointerPresence.swift): this device's own touches and keys hide it.
+ *
+ * Trackpad mode (`trackpad`): the picture is a laptop's trackpad instead, as Sill's portrait pad is
+ * (TrackpadView.swift), relative where direct touch is absolute. One finger moves this device's own
+ * pointer (1.25 pictures for a stroke across the picture), drawn as the Mac's cursor; a tap clicks
+ * where it is, two fingers tap to right-click and scroll there, touch and hold then move drags. It
+ * carries on from where the Mac's pointer is when the Mac moved it last. On a zoomed picture the
+ * view follows the pointer. The wire is unchanged: absolute positions.
  */
 @SuppressLint("ViewConstructor")
 class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callback {
@@ -63,6 +70,18 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
     var onLatchSpent: () -> Unit = {}
     var reverseScroll = false
     var gesturesAllowed = false
+
+    /** Trackpad mode (see above). */
+    var trackpad = false
+        set(value) {
+            if (field == value) return
+            field = value
+            macPointer?.position?.let { (x, y) -> curX = x; curY = y }
+            placeSprite()
+        }
+    /** This device's own pointer, a fraction of the picture: where trackpad mode moves and clicks. */
+    private var curX = 0.5
+    private var curY = 0.5
 
     private val surface = SurfaceView(context)
     private val sprite = ImageView(context).apply { visibility = GONE; isClickable = false; isFocusable = false }
@@ -201,7 +220,12 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
 
     /** Kind 26 as the session keeps it: null while this device moved the pointer last. */
     var macPointer: MacPointer? = null
-        set(value) { field = value; placeSprite() }
+        set(value) {
+            field = value
+            // The Mac moved its pointer: the pad carries on from there.
+            value?.position?.let { (x, y) -> curX = x; curY = y }
+            placeSprite()
+        }
     var cursorShape: CursorShape? = null
         set(value) {
             if (field === value) return
@@ -215,10 +239,11 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
     private var cursorIcon: PointerIcon? = null
 
     private fun placeSprite() {
-        val pos = macPointer?.position
-        val shape = cursorShape
+        val pos = if (trackpad) curX to curY else macPointer?.position
+        if (trackpad && (cursorShape == null || cursorBitmap == null) && sprite.drawable !== fallbackArrow) sprite.setImageDrawable(fallbackArrow)
+        val shape = cursorShape ?: if (trackpad) FALLBACK_SHAPE else null
         val r = picRect()
-        if (pos == null || shape == null || cursorBitmap == null || r.width() <= 0) { sprite.visibility = GONE; return }
+        if (pos == null || shape == null || (cursorBitmap == null && !trackpad) || r.width() <= 0) { sprite.visibility = GONE; return }
         // Mac points drawn 1:1 in device points (dp), whatever the zoom (HEVCDisplayView.setCursorShape).
         val w = (shape.width * density).toInt(); val h = (shape.height * density).toInt()
         val lp = sprite.layoutParams
@@ -250,9 +275,38 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
 
     private fun send(e: InputEvent) = session?.sendInput(e)
 
+    /** Where an action at (x, y) on the view goes: there, or in trackpad mode where the pointer is. */
+    private fun target(x: Float, y: Float): Pair<Double, Double> =
+        if (trackpad) curX to curY else fraction(x, y).also { (fx, fy) -> curX = fx; curY = fy }
+
     private fun pointer(action: PointerAction, x: Float, y: Float) {
-        val (fx, fy) = fraction(x, y)
+        val (fx, fy) = target(x, y)
         send(InputEvent.Pointer(action, fx, fy))
+    }
+
+    /**
+     * Trackpad mode: a finger moved `dx`, `dy` px; the pointer follows, 1.25 pictures for a stroke
+     * across the picture (TrackpadSurface's gain), and the view keeps it in sight while zoomed.
+     * `button`: the left button is held (a drag).
+     */
+    private fun padMove(dx: Float, dy: Float) {
+        val r = picRect()
+        if (r.width() <= 0 || r.height() <= 0) return
+        curX = (curX + dx / r.width() * PAD_GAIN).coerceIn(0.0, 1.0)
+        curY = (curY + dy / r.height() * PAD_GAIN).coerceIn(0.0, 1.0)
+        send(InputEvent.Pointer(PointerAction.MOVE, curX, curY))
+        if (isZoomed) {
+            val px = r.left + curX.toFloat() * r.width(); val py = r.top + curY.toFloat() * r.height()
+            val m = 24 * density
+            val shiftX = when { px < m -> m - px; px > width - m -> (width - m) - px; else -> 0f }
+            val shiftY = when { py < m -> m - py; py > height - m -> (height - m) - py; else -> 0f }
+            if (shiftX != 0f || shiftY != 0f) {
+                val limX = width * (zScale - 1) / 2; val limY = height * (zScale - 1) / 2
+                zOffX = (zOffX + shiftX).coerceIn(-limX, limX); zOffY = (zOffY + shiftY).coerceIn(-limY, limY)
+                requestLayout()
+            }
+        }
+        placeSprite()
     }
 
     /** Holds latched modifiers' keys around a click, as KeyChord does for a modified click. */
@@ -270,7 +324,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
 
     // MARK: touch
 
-    private enum class Mode { NONE, PENDING, SCROLL, DRAG, MULTI }
+    private enum class Mode { NONE, PENDING, SCROLL, DRAG, MULTI, PAD }
 
     private var mode = Mode.NONE
     private var downX = 0f
@@ -363,14 +417,23 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
                 }
             }
             MotionEvent.ACTION_MOVE -> when (mode) {
-                Mode.PENDING -> if (hypot(e.x - downX, e.y - downY) > slop) {
+                Mode.PENDING -> if (hypot(e.x - downX, e.y - downY) > slop && trackpad) {
+                    main.removeCallbacks(longPress)
+                    mode = Mode.PAD
+                    padMove(e.x - downX, e.y - downY)      // the whole way from touch-down: nothing lost to the slop
+                    lastX = e.x; lastY = e.y
+                } else if (hypot(e.x - downX, e.y - downY) > slop) {
                     main.removeCallbacks(longPress)
                     beginScroll(downX, downY)
                     scrollBy(e.x - lastX, e.y - lastY, e.x, e.y)
                     lastX = e.x; lastY = e.y
                 }
                 Mode.SCROLL -> { scrollBy(e.x - lastX, e.y - lastY, e.x, e.y); lastX = e.x; lastY = e.y }
-                Mode.DRAG -> { pointer(PointerAction.MOVE, e.x, e.y); lastX = e.x; lastY = e.y }
+                Mode.PAD -> { padMove(e.x - lastX, e.y - lastY); lastX = e.x; lastY = e.y }
+                Mode.DRAG -> {
+                    if (trackpad) padMove(e.x - lastX, e.y - lastY) else pointer(PointerAction.MOVE, e.x, e.y)
+                    lastX = e.x; lastY = e.y
+                }
                 Mode.MULTI -> {
                     val (cx, cy) = centroid(e)
                     if (e.pointerCount == 2) twoFingerMove(e, cx, cy)
@@ -390,6 +453,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
                     Mode.PENDING -> if (e.eventTime - downTime < 450) click(downX, downY, right = false)
                     Mode.SCROLL -> endScroll(momentum = true)
                     Mode.DRAG -> pointer(PointerAction.LEFT_UP, e.x, e.y)
+                    Mode.PAD -> Unit
                     Mode.MULTI -> {
                         // A picture left within 2 % of the whole is the whole picture again.
                         if (owner == Owner.PICTURE && zScale < 1.02f) resetZoom()
@@ -463,7 +527,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
     private fun beginScroll(x: Float, y: Float, keepMode: Boolean = false) {
         if (!keepMode) mode = Mode.SCROLL
         scrolling = true
-        val (fx, fy) = fraction(x, y)
+        val (fx, fy) = target(x, y)
         scrollAtX = fx; scrollAtY = fy
         send(InputEvent.ScrollGesture(ScrollPhase.BEGAN, fx, fy))
     }
@@ -472,7 +536,7 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
         val r = picRect()
         if (r.width() <= 0 || r.height() <= 0) return
         if (dxPx == 0f && dyPx == 0f) return
-        val (fx, fy) = fraction(x, y)
+        val (fx, fy) = target(x, y)
         send(InputEvent.Scroll(fx, fy, dxPx / r.width() * factor, dyPx / r.height() * factor))
     }
 
@@ -640,9 +704,33 @@ class StreamView(context: Context) : FrameLayout(context), SurfaceHolder.Callbac
         }
     }
 
+    /** Trackpad mode's pointer before the Mac has sent its cursor's shape: a plain arrow. */
+    private val fallbackArrow = object : android.graphics.drawable.Drawable() {
+        private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.BLACK }
+        private val edge = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE; style = android.graphics.Paint.Style.STROKE; strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+        override fun draw(c: android.graphics.Canvas) {
+            val w = bounds.width() / FALLBACK_SHAPE.width; val h = bounds.height() / FALLBACK_SHAPE.height
+            val path = android.graphics.Path().apply {
+                moveTo(1f * w, 1f * h); lineTo(1f * w, 17f * h); lineTo(5f * w, 13f * h); lineTo(8f * w, 20f * h)
+                lineTo(11f * w, 19f * h); lineTo(8f * w, 12f * h); lineTo(13f * w, 12f * h); close()
+            }
+            edge.strokeWidth = 1.5f * w
+            c.drawPath(path, fill); c.drawPath(path, edge)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+        @Deprecated("Deprecated in Java") override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
     companion object {
         /** Sill's zoom range is 1× to 5× (StreamZoom.maxScale). */
         const val MAX_ZOOM = 5f
+        /** Pictures the pointer travels for a stroke across the picture (TrackpadSurface's 1.25 frames a swipe). */
+        const val PAD_GAIN = 1.25
+        /** The fallback arrow's size and hot spot, in Mac points. */
+        val FALLBACK_SHAPE = CursorShape(1f, 1f, 14f, 21f, ByteArray(0))
     }
 
     override fun onDetachedFromWindow() {

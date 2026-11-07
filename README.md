@@ -39,6 +39,10 @@ Not affiliated with or endorsed by the Sill project.
   low-latency AudioTrack, kept within 150 ms of the picture (later sound is dropped, a stalled
   track restarted). The hello lists `aac-eld`. Mute button in the bar; the volume keys set its
   volume. The Mac's Send Audio setting has to be on.
+- **Trackpad mode** (the touch/mouse button in the bar, remembered): the picture works as a laptop
+  trackpad, as Sill's portrait pad does. Drag to move the pointer (1.25 pictures for a stroke across
+  it), tap to click where it is, two fingers to right-click and scroll there, touch and hold then move
+  to drag. It carries on from the Mac's pointer when the Mac moved it last; zoomed, the view follows it.
 - **Pinch to zoom**: 1× to 5× about the fingers, as Sill's StreamZoom. Two fingers on a zoomed
   picture move it; a two-finger drag on the whole picture still scrolls the Mac. Taps and scrolls
   land on what's under the finger at any zoom. Pinch all the way out for the whole picture.

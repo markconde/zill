@@ -44,6 +44,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DesktopMac
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Mouse
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewQuilt
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -117,6 +119,9 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
     var latched by remember { mutableLongStateOf(0L) }
     // Aa, as in Sill's own app: Off (null) leaves the Mac window alone; a scale fits it to this panel.
     var textScale by remember { mutableStateOf<Double?>(null) }
+    // Trackpad mode, kept for the next session: the picture is a laptop's trackpad.
+    val prefs = remember { context.getSharedPreferences("stream", Context.MODE_PRIVATE) }
+    var trackpad by remember { mutableStateOf(prefs.getBoolean("trackpad", false)) }
     val windowStreams = list?.active is StreamSource.Window
 
     KeepScreenOn()
@@ -146,6 +151,14 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                 textScale = textScale,
                 textScaleEnabled = windowStreams,
                 onTextScale = { textScale = it },
+                trackpad = trackpad,
+                onTrackpad = {
+                    trackpad = !trackpad
+                    prefs.edit().putBoolean("trackpad", trackpad).apply()
+                    Toast.makeText(context,
+                        if (trackpad) "Trackpad: drag to move the pointer, tap to click, two fingers to scroll, touch and hold to drag."
+                        else "Touch: the pointer goes where you touch.", Toast.LENGTH_SHORT).show()
+                },
                 onPaste = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
@@ -185,6 +198,7 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                     v.gesturesAllowed = (list?.gestures ?: 0) >= 1
                     v.latched = latched
                     v.textScale = textScale
+                    v.trackpad = trackpad
                     v.cursorShape = cursorShape
                     v.macPointer = macPointer
                 },
@@ -278,6 +292,8 @@ private fun TopBar(
     textScale: Double?,
     textScaleEnabled: Boolean,
     onTextScale: (Double?) -> Unit,
+    trackpad: Boolean,
+    onTrackpad: () -> Unit,
     onPaste: () -> Unit,
     onHide: () -> Unit,
 ) {
@@ -313,6 +329,11 @@ private fun TopBar(
         IconButton(onClick = onMute, modifier = Modifier.size(40.dp)) {
             Icon(if (muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                 if (muted) "Unmute the Mac's sound" else "Mute the Mac's sound", tint = Color.White)
+        }
+        IconButton(onClick = onTrackpad, modifier = Modifier.size(40.dp)) {
+            Icon(if (trackpad) Icons.Default.Mouse else Icons.Default.TouchApp,
+                if (trackpad) "Trackpad mode: switch to touch" else "Touch mode: switch to trackpad",
+                tint = if (trackpad) Color(0xFF8AB4FF) else Color.White)
         }
         IconButton(onClick = onWindows, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.ViewQuilt, "Windows and apps", tint = Color.White) }
         IconButton(onClick = onPaste, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.ContentPaste, "Paste on the Mac", tint = Color.White) }
