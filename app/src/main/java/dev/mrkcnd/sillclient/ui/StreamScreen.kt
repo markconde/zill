@@ -478,22 +478,36 @@ private fun PickerRow(
 }
 
 /**
- * Where the camera is, as insets: the window's display cutout, or, where a phone leaves that empty
- * (seen on a Galaxy Z Fold's inner screen), the display's own cutout. Read again when the phone
- * turns or folds.
+ * Where the camera is, as insets: the window's display cutout, or the display's own; where a phone
+ * reports neither (the Galaxy Z Fold8's inner screen), CameraGap's preset for it. Read again when the
+ * phone turns or folds.
  */
 @Composable
 internal fun cutoutInsets(): WindowInsets {
     val view = LocalView.current
     val config = LocalConfiguration.current
-    val fromDisplay = remember(config, view.display) {
+    val ctx = LocalContext.current
+    remember { CameraGap.load(ctx) }
+    val presetOn by CameraGap.on.collectAsState()
+    val d = LocalDensity.current
+    val dir = LocalLayoutDirection.current
+    val w = WindowInsets.displayCutout
+    val windowReports = w.getLeft(d, dir) + w.getTop(d) + w.getRight(d, dir) + w.getBottom(d) > 0
+    val fromDisplay = remember(config, view.display, presetOn, windowReports) {
         val c = view.display?.cutout
-        if (c == null) WindowInsets(0, 0, 0, 0) else WindowInsets(c.safeInsetLeft, c.safeInsetTop, c.safeInsetRight, c.safeInsetBottom)
+        if (c != null) WindowInsets(c.safeInsetLeft, c.safeInsetTop, c.safeInsetRight, c.safeInsetBottom)
+        else if (windowReports) WindowInsets(0, 0, 0, 0)
+        else {
+            val size = CameraGap.realSize(view.display)
+            val rect = size?.let { (sw, sh) -> CameraGap.presetRect(view.display?.rotation ?: 0, sw, sh, config.smallestScreenWidthDp) }
+            if (rect == null || size == null) WindowInsets(0, 0, 0, 0)
+            else CameraGap.insetsFor(rect, size.first, size.second).let { WindowInsets(it[0], it[1], it[2], it[3]) }
+        }
     }
-    return WindowInsets.displayCutout.union(fromDisplay)
+    return w.union(fromDisplay)
 }
 
-/** "window 0/84/0/0 px · display 0/84/0/0 px", for the Settings tab: what this screen reports. */
+/** For the Settings tab: what this screen reports, how it is turned, and what Android's configuration says. */
 @Composable
 internal fun cutoutReport(): String {
     val view = LocalView.current
@@ -506,7 +520,12 @@ internal fun cutoutReport(): String {
         view.display?.cutout?.let { c -> "${c.safeInsetLeft}/${c.safeInsetTop}/${c.safeInsetRight}/${c.safeInsetBottom}" +
             c.boundingRects.joinToString("") { r -> " [${r.left},${r.top}–${r.right},${r.bottom}]" } } ?: "none"
     }
-    return "window $win px · display $disp"
+    val screen = remember(config, view.display) {
+        val size = CameraGap.realSize(view.display)
+        "${android.os.Build.MODEL} · ${size?.let { "${it.first}×${it.second}" } ?: "?"} px · rotation ${(view.display?.rotation ?: 0) * 90}° · ${config.smallestScreenWidthDp} dp"
+    }
+    val system = remember { CameraGap.systemConfig() }
+    return "window $win px · display $disp · $screen · system: $system"
 }
 
 @Composable

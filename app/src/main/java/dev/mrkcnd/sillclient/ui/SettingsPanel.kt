@@ -116,6 +116,12 @@ fun SettingsPanel(session: StreamSession) {
         }
         Footnote(if (h.persistent) "Changes are saved on $mac and apply to every device." else "Changes last until Sill on $mac quits, and apply to every device.")
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        if (CameraGap.hasPreset) {
+            CameraGap.load(ctx)
+            val gapOn by CameraGap.on.collectAsState()
+            Toggle("Leave room for the inner camera", gapOn) { CameraGap.set(ctx, it) }
+            Footnote("This phone’s inner screen doesn’t tell apps where its camera is, so Sill Client keeps the bars clear of where it sits on a Galaxy Z Fold8. This device only.")
+        }
         Footnote(about)
     }
 }
