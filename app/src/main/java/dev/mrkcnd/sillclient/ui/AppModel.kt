@@ -13,7 +13,9 @@ import dev.mrkcnd.sillclient.net.FoundMac
 import dev.mrkcnd.sillclient.net.PairingClient
 import dev.mrkcnd.sillclient.net.Route
 import dev.mrkcnd.sillclient.net.StreamSession
+import dev.mrkcnd.sillclient.net.Tls
 import dev.mrkcnd.sillclient.protocol.HomeDoor
+import dev.mrkcnd.sillclient.protocol.MacAddress
 import dev.mrkcnd.sillclient.protocol.PairLink
 import dev.mrkcnd.sillclient.protocol.PairingCode
 import dev.mrkcnd.sillclient.protocol.RecognitionTag
@@ -29,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.MessageDigest
 
 /** One row of the connect screen. */
 data class MacRow(
@@ -42,7 +45,7 @@ data class MacRow(
         found != null && found.door == HomeDoor.PLAIN -> "On this network · unencrypted (an older Mac host)"
         found != null && found.door == HomeDoor.OPEN -> "On this network · pairing not required"
         found != null -> "On this network · not paired"
-        saved?.manualHost != null || saved?.remoteHosts?.isNotEmpty() == true -> "Paired · away (Remote Access)"
+        saved?.manualHost != null || saved?.remoteHosts?.isNotEmpty() == true || saved?.lanHosts?.isNotEmpty() == true -> "Paired · away (Remote Access)"
         else -> "Paired · not seen nearby"
     }
 }
@@ -182,7 +185,29 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
         val (h, port) = splitHostPort(trimmed, 7455)
         if (h.isEmpty()) { pairing.value = PairingUi.Failed("Type the Mac's address, such as 100.101.102.103 or mac.tailnet.ts.net."); return }
-        pairing.value = PairingUi.EnterCode(h, h, port, null, fromAsk = false)
+        val known = saved.value
+        if (known.isEmpty()) { pairing.value = PairingUi.EnterCode(h, h, port, null, fromAsk = false); return }
+        // A Mac this device already paired with, at an address it didn't know (its home address
+        // through WireGuard, say): one handshake reads its key, and a match connects without a code.
+        pairing.value = PairingUi.Busy("Looking for a Mac at ${hostPort(h, port)}…")
+        viewModelScope.launch {
+            val seen = withContext(Dispatchers.IO) {
+                runCatching { Tls.connect(h, port, Tls.SESSION_ALPN, null, identity).let { c -> runCatching { c.socket.close() }; c.macFingerprint } }
+            }
+            val fp = seen.getOrNull()
+            val mac = fp?.let { f -> known.firstOrNull { m -> m.pin?.let { MessageDigest.isEqual(it, f) } == true } }
+            when {
+                mac != null -> {
+                    pairing.value = PairingUi.None
+                    store.update(mac.macID) { it.copy(manualHost = hostPort(h, port)) }
+                    saved.value = store.all()
+                    open(Route(h, port, true, mac.pin, "Remote"), mac.name, mac.macID)
+                }
+                seen.isFailure -> pairing.value = PairingUi.Failed("Couldn't reach a Mac at ${hostPort(h, port)}: ${seen.exceptionOrNull()?.message}. " +
+                    "Is Remote Access on in Sill on the Mac, and is the VPN connected?")
+                else -> pairing.value = PairingUi.EnterCode(h, h, port, fp, fromAsk = false)
+            }
+        }
     }
 
     private fun paired(mac: SavedMac, then: Route?) {
@@ -196,10 +221,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val candidates = buildList {
             mac.manualHost?.let { add(splitHostPort(it, mac.remotePort)) }
             mac.remoteHosts.forEach { add(splitHostPort(it, mac.remotePort)) }
+            // Last, as Sill's iPhone app does: the home addresses, reached through a VPN into the home network.
+            mac.lanHosts.forEach { add(splitHostPort(it, mac.remotePort)) }
         }.distinct()
         if (candidates.isEmpty()) {
             pairing.value = PairingUi.Failed("${mac.name} isn't on this network, and it hasn't told this device how to reach it from afar. " +
-                "Turn on Remote Access in Sill on the Mac and connect once at home.")
+                "Turn on Remote Access in Sill on the Mac and connect once at home, or use Add a Mac with its address.")
             return
         }
         // One address: dial it. Several: a short TCP probe picks the first that answers (a Mac's door
@@ -236,8 +263,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             macInfoJob = viewModelScope.launch {
                 s.macInfo.collect { info ->
                     if (info == null || info.macID != macID) return@collect
-                    val hosts = info.addresses.filter { it.kind != "lan" }.map { a -> a.port?.let { hostPort(a.host, it) } ?: a.host }
-                    store.update(macID) { it.copy(remoteHosts = hosts, remotePort = info.remotePort, name = info.name.ifBlank { it.name }) }
+                    fun text(a: MacAddress) = a.port?.let { hostPort(a.host, it) } ?: a.host
+                    val (lan, away) = info.addresses.partition { it.kind == "lan" }
+                    store.update(macID) {
+                        it.copy(remoteHosts = away.map(::text), lanHosts = lan.map(::text), remotePort = info.remotePort, name = info.name.ifBlank { it.name })
+                    }
                     saved.value = store.all()
                 }
             }

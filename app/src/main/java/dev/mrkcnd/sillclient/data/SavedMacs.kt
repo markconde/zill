@@ -14,6 +14,8 @@ data class SavedMac(
     val remotePort: Int = 7455,
     val remoteHosts: List<String> = emptyList(),
     val manualHost: String? = null,   // typed by the person (host or host:port)
+    /** The Mac's home-network addresses: tried last from away, through a VPN into the home network (WireGuard). */
+    val lanHosts: List<String> = emptyList(),
 ) {
     val pin: ByteArray? get() = Base64Url.decode(fingerprint)
     val recognitionKeyBytes: ByteArray? get() = recognitionKey?.let { Base64Url.decode(it) }
@@ -22,16 +24,19 @@ data class SavedMac(
         .put("macID", macID).put("fingerprint", fingerprint).put("name", name)
         .put("recognitionKey", recognitionKey).put("remotePort", remotePort)
         .put("remoteHosts", JSONArray(remoteHosts)).put("manualHost", manualHost)
+        .put("lanHosts", JSONArray(lanHosts))
 
     companion object {
         fun parse(o: JSONObject): SavedMac? = runCatching {
             val hosts = o.optJSONArray("remoteHosts")
+            val lan = o.optJSONArray("lanHosts")
             SavedMac(
                 o.getString("macID"), o.getString("fingerprint"), o.optString("name", "Mac"),
                 o.optString("recognitionKey").takeIf { it.isNotEmpty() && it != "null" },
                 o.optInt("remotePort", 7455),
                 (0 until (hosts?.length() ?: 0)).map { hosts!!.getString(it) },
                 o.optString("manualHost").takeIf { it.isNotEmpty() && it != "null" },
+                (0 until (lan?.length() ?: 0)).map { lan!!.getString(it) },
             )
         }.getOrNull()
     }

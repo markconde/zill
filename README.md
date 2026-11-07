@@ -95,6 +95,7 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Android 10 (API 29) or l
   1.3 door with client certificates and ALPN, ask → shown → a wrong code refused → the right
   code paired, then a pinned session (hello first, source, viewport, window list, clipboard
   subscription, goodbye), and a wrong pin refused before any byte is sent.
+- Away from home, the app dials the Mac's home address on its Remote Access port, as Sill's iPhone app does; typing that address in Add a Mac connects a Mac already paired without a code.
 - `StandInServe` (skipped by default) runs that stand-in Mac on port 17455 and streams a looping
   HEVC test clip, a TextEdit-like menu bar, an AAC-ELD tone (`testclip.eld`, made by `tools/eld-clip.swift` with
   AudioToolbox, as Sill's AudioEncoder makes it), an arrow cursor and a pointer that circles the
