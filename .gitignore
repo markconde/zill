@@ -5,10 +5,12 @@ local.properties
 *.iml
 .kotlin/
 .DS_Store
-# Built APKs (published ones live in the F-Droid repo on the server).
+# Built APKs.
 *.apk
 # Signing keys never belong here; the release key is in ~/.config/sill-android/.
 *.jks
 *.p12
 *.keystore
 keystore.properties
+# Publishing settings (publish-fdroid.sh) live in ~/.config/sill-android/fdroid.conf.
+fdroid.conf

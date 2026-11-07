@@ -161,9 +161,11 @@ Release builds are signed with the key in `~/.config/sill-android/` (`keystore.p
 fall back to the debug key. Every version must use the same key, or Android refuses the update, so
 keep a copy of both files in a password manager.
 
-Phones install and update the app from the F-Droid repo,
-`https://fdroid.example.com/fdroid/repo` (on the server, `/path/to/fdroid`). To publish, bump
-`versionCode` (and `versionName`) in `app/build.gradle.kts`, then:
+`./publish-fdroid.sh` publishes the release build to a self-hosted F-Droid repo over SSH. Where it
+publishes is configuration, outside the repo: `~/.config/sill-android/fdroid.conf` (or the file
+`FDROID_CONFIG` names), which sets `FDROID_HOST`, `FDROID_REPO_DIR`, `FDROID_UPDATE` and,
+optionally, `FDROID_URL`; the top of the script says what each is. To publish, bump `versionCode`
+(and `versionName`) in `app/build.gradle.kts`, then:
 
 ```bash
 ./publish-fdroid.sh
