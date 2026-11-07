@@ -190,14 +190,4 @@ fun parseClipboardText(bytes: ByteArray): String? = runCatching {
 }.getOrNull()
 
 /** HostSettingsState: only the few fields this client shows. */
-data class HostSettingsSummary(val maxFPS: Int?, val bitrate: Int?, val captureScale: Double?)
 
-fun parseHostSettings(bytes: ByteArray): HostSettingsSummary? = runCatching {
-    val o = JSONObject(String(bytes, Charsets.UTF_8))
-    val s = o.optJSONObject("settings") ?: o
-    HostSettingsSummary(
-        if (s.has("maxFPS")) s.optInt("maxFPS") else null,
-        if (s.has("bitrate")) s.optInt("bitrate") else null,
-        if (s.has("captureScale")) s.optDouble("captureScale") else null,
-    )
-}.getOrNull()

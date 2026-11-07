@@ -46,6 +46,12 @@ Not affiliated with or endorsed by the Sill project.
   app's menu bar (kinds 24/25/27): menus fetched from the Mac as they open, submenus, shortcuts,
   ✓ marks and disabled items as the Mac shows them. Choosing an item presses it on the Mac, by id
   and title within the menus' version, so a menu that changed meanwhile is refused, not misclicked.
+- **The Mac's settings** (kinds 16/17): the Settings tab of the windows sheet shows and changes
+  Quality, Resolution, Frame rate limit, Prioritize encoding speed, Virtual Display, Send Audio and
+  Direct Wireless (a paired device only), with Sill's own labels, what runs now, and the Mac's
+  warnings (a link that can't keep up and what would fit, the software encoder, why no sound).
+  A change shows at once; one the Mac doesn't take snaps back with a notice. They apply to every
+  device.
 - **Windows and apps**: the window list with thumbnails, picking a window or the Desktop, and
   Close, Minimize and Full Screen on long-press. Apps opens any installed app.
 - **Clipboard**: text copied on the Mac lands on Android. Paste sends Android's clipboard to
@@ -58,7 +64,7 @@ Not affiliated with or endorsed by the Sill project.
 
 ## Not yet
 
-The host settings panel (16/17), the portrait trackpad, QR scanning
+The portrait trackpad, QR scanning
 (paste the link instead), composed text (accents, non-US layouts), the USB-cable path, and Direct
 Wireless.
 

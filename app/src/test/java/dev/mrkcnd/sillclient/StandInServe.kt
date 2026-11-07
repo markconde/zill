@@ -131,6 +131,15 @@ class StandInServe {
             .put("active", active).put("protocol", 1).put("gestures", 1).put("clipboard", 1)
             .put("hostVersion", "stand-in").toString().toByteArray())
         list(JSONObject().put("desktop", JSONObject()))
+        // The Mac's settings (kind 16), right after the window list, as Sill sends them.
+        val settings = JSONObject().put("maxFPS", 60).put("bitrate", 15_000_000).put("captureScale", 2).put("prioritizeSpeed", false)
+            .put("virtualDisplay", true).put("directWireless", false).put("sendAudio", true)
+        fun settingsState(answering: Int?) = JSONObject().put("settings", settings).put("persistent", true).put("virtualDisplayAvailable", true)
+            .put("softwareEncoder", false).put("sessionPaired", true)
+            .put("stream", JSONObject().put("width", 1280).put("height", 800).put("fps", settings.getInt("maxFPS"))
+                .put("mbps", settings.getInt("bitrate") / 1_000_000).put("onVirtualDisplay", settings.getBoolean("virtualDisplay")))
+            .apply { if (answering != null) put("answering", answering) }.toString().toByteArray()
+        send(Kind.HOST_SETTINGS, settingsState(null))
         send(Kind.APP_LIST, JSONArray().put(JSONObject().put("name", "TextEdit").put("bundleID", "com.apple.TextEdit")).toString().toByteArray())
         val running = java.util.concurrent.atomic.AtomicBoolean(true)
         val inputsRead = java.util.concurrent.atomic.AtomicLong(0)
@@ -179,6 +188,18 @@ class StandInServe {
                         }
                     }
                     Kind.INPUT -> { inputsRead.incrementAndGet(); lastInputAt.set(System.currentTimeMillis()); say("kind 8 ${String(m.payload).take(300)}") }
+                    Kind.CHANGE_SETTINGS -> {
+                        // Kind 17: only the Mac menu's choices are taken. Prioritize Speed is refused on
+                        // purpose, so the device's "kept its setting" path can be seen.
+                        val c = JSONObject(String(m.payload))
+                        val took = ArrayList<String>()
+                        if (c.has("maxFPS") && c.getInt("maxFPS") in listOf(60, 120)) { settings.put("maxFPS", c.getInt("maxFPS")); took += "maxFPS" }
+                        if (c.has("bitrate") && c.getInt("bitrate") in listOf(4, 8, 15, 25, 40, 80, 150).map { it * 1_000_000 }) { settings.put("bitrate", c.getInt("bitrate")); took += "bitrate" }
+                        if (c.has("captureScale") && c.getDouble("captureScale") in listOf(1.0, 2.0)) { settings.put("captureScale", c.getDouble("captureScale")); took += "captureScale" }
+                        for (k in listOf("virtualDisplay", "directWireless", "sendAudio")) if (c.has(k)) { settings.put(k, c.getBoolean(k)); took += k }
+                        say("kind 17 ${String(m.payload)} → took $took")
+                        send(Kind.HOST_SETTINGS, settingsState(c.optInt("token")))
+                    }
                     Kind.FETCH_MENU -> {
                         val q = JSONObject(String(m.payload))
                         val token = q.optInt("token")

@@ -228,6 +228,11 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
         )
     }
 
+    val settingsNotice by session.settingsNotice.collectAsState()
+    LaunchedEffect(settingsNotice) {
+        settingsNotice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); session.settingsNotice.value = null }
+    }
+
     // A choice the Mac refused (or the app not answering): one line, then gone.
     LaunchedEffect(menuNotice) {
         menuNotice?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); session.menuNotice.value = null }
@@ -378,7 +383,9 @@ private fun Picker(session: StreamSession, onPicked: () -> Unit) {
         TabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Windows") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Apps") })
+            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Settings") })
         }
+        if (tab == 2) { SettingsPanel(session); return@Column }
         if (tab == 0) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item {

@@ -16,6 +16,9 @@ import dev.mrkcnd.sillclient.protocol.Esds
 import dev.mrkcnd.sillclient.protocol.helloJson
 import dev.mrkcnd.sillclient.protocol.parseMacPointer
 import dev.mrkcnd.sillclient.protocol.MacMenu
+import dev.mrkcnd.sillclient.protocol.HostSettingsState
+import dev.mrkcnd.sillclient.protocol.SettingsChange
+import dev.mrkcnd.sillclient.protocol.SettingsChoices
 import dev.mrkcnd.sillclient.protocol.fetchMenuJson
 import dev.mrkcnd.sillclient.protocol.menuRows
 import dev.mrkcnd.sillclient.protocol.pressMenuItemJson
@@ -180,6 +183,29 @@ class ProtocolVectorsTest {
         assertEquals("""{"token":1}""", fetchMenuJson(1).toString())
         val f = fetchMenuJson(2, 3, "2", "File"); assertEquals("2", f.getString("id")); assertEquals(3, f.getInt("version")); assertEquals("File", f.getString("title"))
         val p = pressMenuItemJson(4, 3, "2.0", "New Window"); assertEquals("2.0", p.getString("id")); assertEquals(4, p.getInt("token"))
+    }
+
+    /** Kind 16 as HostSettings.swift encodes it, an older Mac's (no audio, no wireless) too; kind 17 holds only what changed. */
+    @Test fun host_settings_messages() {
+        val h = HostSettingsState.parse("""{"settings":{"maxFPS":120,"bitrate":15000000,"captureScale":2,"prioritizeSpeed":false,
+            "virtualDisplay":true,"directWireless":false,"sendAudio":true},"persistent":true,"virtualDisplayAvailable":true,
+            "softwareEncoder":false,"stream":{"width":2940,"height":1912,"fps":60,"mbps":15,"onVirtualDisplay":true},"answering":12,
+            "away":{"homeBitrate":15000000,"homeCaptureScale":2,"awayBitrate":4000000,"awayCaptureScale":1,"thisConnectionAway":false,"awayRunning":false},
+            "link":{"state":"behind","withheldPerSecond":9,"bitrate":15000000,"carriedKbps":6200,"suggestedBitrate":8000000},
+            "audioNote":"Couldn’t capture the sound of Safari","sessionPaired":true}""".toByteArray())!!
+        assertEquals(120, h.settings.maxFPS); assertEquals(2.0, h.settings.captureScale, 0.0); assertEquals(true, h.settings.sendAudio)
+        assertEquals(12, h.answering); assertEquals(2940, h.stream!!.width); assertTrue(h.link!!.isBehind)
+        assertEquals(8_000_000, h.link!!.suggestedBitrate); assertEquals(true, h.sessionPaired)
+        val old = HostSettingsState.parse("""{"settings":{"maxFPS":60,"bitrate":12000000,"captureScale":1,"prioritizeSpeed":true,
+            "virtualDisplay":false},"persistent":false,"virtualDisplayAvailable":false,"softwareEncoder":true}""".toByteArray())!!
+        assertEquals(null, old.settings.sendAudio); assertEquals(null, old.settings.directWireless); assertEquals(null, old.sessionPaired)
+        assertEquals("Custom — 12 Mbps", SettingsChoices.qualityTitle(old.settings.bitrate))
+        assertEquals("Balanced — 15 Mbps", SettingsChoices.qualityTitle(15_000_000))
+        val c = SettingsChange(maxFPS = 60)
+        val j = c.json(13)
+        assertEquals(setOf("token", "maxFPS"), j.keys().asSequence().toSet()); assertEquals(13, j.getInt("token")); assertEquals(60, j.getInt("maxFPS"))
+        assertFalse(c.takenBy(h.settings)); assertTrue(c.takenBy(old.settings))
+        assertEquals(60, c.appliedTo(h.settings).maxFPS); assertEquals(true, c.appliedTo(h.settings).virtualDisplay)
     }
 }
 

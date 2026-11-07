@@ -17,6 +17,8 @@ import dev.mrkcnd.sillclient.protocol.clientStatsJson
 import dev.mrkcnd.sillclient.protocol.gestureJson
 import dev.mrkcnd.sillclient.protocol.helloJson
 import dev.mrkcnd.sillclient.protocol.MacMenu
+import dev.mrkcnd.sillclient.protocol.HostSettingsState
+import dev.mrkcnd.sillclient.protocol.SettingsChange
 import dev.mrkcnd.sillclient.protocol.MenuItem
 import dev.mrkcnd.sillclient.protocol.fetchMenuJson
 import dev.mrkcnd.sillclient.protocol.menuRows
@@ -120,6 +122,43 @@ class StreamSession(
     private var lastViewport: JSONObject? = null
     private var subscribedClipboard = false
 
+    // MARK: the Mac's settings (kinds 16, 17)
+
+    /** The Mac's settings as it last reported them to this connection; null from a Mac without settings. */
+    val hostSettings = MutableStateFlow<HostSettingsState?>(null)
+    /** Changes sent and not yet answered, by token: the panel shows them over the Mac's values. */
+    val pendingSettings = MutableStateFlow<Map<Int, SettingsChange>>(emptyMap())
+    /** A change the Mac didn't take, for a one-line notice; the UI clears it once shown. */
+    val settingsNotice = MutableStateFlow<String?>(null)
+
+    /** Set one setting on the Mac. Never a field the Mac didn't report. */
+    fun changeSettings(c: SettingsChange) {
+        val now = hostSettings.value?.settings ?: return
+        if ((c.directWireless != null && now.directWireless == null) || (c.sendAudio != null && now.sendAudio == null)) return
+        val token = settingsTokens.incrementAndGet()
+        pendingSettings.value = pendingSettings.value + (token to c)
+        send(Kind.CHANGE_SETTINGS, c.json(token).toString().toByteArray())
+        runCatching {
+            timers.schedule({
+                if (pendingSettings.value.containsKey(token)) {
+                    pendingSettings.value = pendingSettings.value - token
+                    settingsNotice.value = "${windowList.value?.macName?.ifBlank { null } ?: "The Mac"} didn’t answer that change."
+                }
+            }, 6, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun onHostSettings(h: HostSettingsState) {
+        hostSettings.value = h
+        val token = h.answering ?: return
+        // The answer to one change: whatever is still pending from before it was answered too.
+        val pending = pendingSettings.value
+        val answered = pending.filterKeys { it <= token }
+        pendingSettings.value = pending - answered.keys
+        val mine = answered[token] ?: return
+        if (!mine.takenBy(h.settings)) settingsNotice.value = "The Mac kept its setting."
+    }
+
     // MARK: the Mac's menus (kinds 24, 25, 27)
 
     /** The streamed app's menu bar as the Mac last sent it; null until the first one (an older Mac sends none). */
@@ -131,6 +170,7 @@ class StreamSession(
     class MenuContents(val items: List<MenuItem>, val more: Int, val note: String?, val stale: Boolean)
 
     private val menuTokens = java.util.concurrent.atomic.AtomicInteger(0)
+    private val settingsTokens = SETTINGS_TOKENS
     private var menusAsked = false
     private class PendingFetch(val version: Int?, val done: (MenuContents) -> Unit)
     private val pendingFetches = java.util.concurrent.ConcurrentHashMap<Int, PendingFetch>()
@@ -270,6 +310,7 @@ class StreamSession(
                 }
             }
             Kind.MAC_MENU -> MacMenu.parse(p)?.let(::onMacMenu)
+            Kind.HOST_SETTINGS -> HostSettingsState.parse(p)?.let(::onHostSettings)
             Kind.THUMBNAIL -> dev.mrkcnd.sillclient.protocol.ImageBlob.thumbnail(p)?.let { (id, jpeg) ->
                 BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.let { thumbnails.value = thumbnails.value + (id to it) }
             }
@@ -409,5 +450,9 @@ class StreamSession(
         audio.release()
     }
 
-    companion object { private const val TAG = "SillSession" }
+    companion object {
+        private const val TAG = "SillSession"
+        /** Kind 17's tokens: strictly increasing for the process, never reset (HostSettings.swift). */
+        private val SETTINGS_TOKENS = java.util.concurrent.atomic.AtomicInteger(0)
+    }
 }
