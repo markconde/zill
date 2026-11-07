@@ -11,6 +11,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
@@ -179,7 +184,8 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
             if (!showBar) {
                 IconButton(
                     onClick = { showBar = true },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                    modifier = Modifier.align(Alignment.TopEnd)
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.End)).padding(8.dp)
                         .background(Color(0x66000000), RoundedCornerShape(50)),
                 ) { Icon(Icons.Default.Visibility, "Show controls", tint = Color.White) }
             }
@@ -268,7 +274,11 @@ private fun TopBar(
     onHide: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().background(Color(0xFF1C1C1E)).padding(horizontal = 4.dp),
+        // Clear of the camera cutout (the Fold's punch-hole, top or side as the phone turns): the bar's
+        // colour runs under it, its buttons don't.
+        Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Disconnect", tint = Color.White) }
@@ -328,7 +338,9 @@ private fun TextScaleButton(scale: Double?, enabled: Boolean, onPick: (Double?) 
 @Composable
 private fun KeyRow(menuApp: String?, onMenus: () -> Unit, latched: Long, gestures: Boolean, onLatch: (Long) -> Unit, onKey: (Int) -> Unit, onGesture: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(Color(0xFF2C2C2E)).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
+        Modifier.fillMaxWidth().background(Color(0xFF2C2C2E))
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+            .horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
