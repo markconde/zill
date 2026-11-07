@@ -298,7 +298,7 @@ private fun TopBar(
         // Clear of a reported camera cutout (top or side as the phone turns): the bar's colour runs
         // under it, its buttons don't.
         Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))
-            .windowInsetsPadding(cutoutInsets().only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .windowInsetsPadding(cutoutInsets().only(if (hole != null) WindowInsetsSides.Horizontal else WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .onGloballyPositioned { bar = it.boundsInWindow() }
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -516,8 +516,10 @@ internal fun cutoutInsets(): WindowInsets {
 }
 
 /**
- * The unreported camera (CameraGap's preset) as left, top, right, bottom px in this window, or null:
- * another phone, the cover screen, the switch off, or a phone that reports its cutout after all.
+ * A camera in the top edge as left, top, right, bottom px in this window, for the top bar to leave a
+ * gap at: the one the display reports at its top (the Fold8's cover screen: a punch-hole centred at
+ * the top), else CameraGap's preset for one it doesn't report (the Fold8's inner screen). Null when
+ * there is none at the top (a camera on a side keeps its insets).
  */
 @Composable
 internal fun cameraHole(): FloatArray? {
@@ -531,10 +533,14 @@ internal fun cameraHole(): FloatArray? {
     val w = WindowInsets.displayCutout
     val reported = view.display?.cutout != null || w.getLeft(d, dir) + w.getTop(d) + w.getRight(d, dir) + w.getBottom(d) > 0
     return remember(config, view.display, on, reported) {
+        val at = IntArray(2).also { view.rootView.getLocationOnScreen(it) }
+        val top = view.display?.cutout?.takeIf { !CameraGap.pretending }?.boundingRectTop
+        if (top != null && !top.isEmpty) {
+            return@remember floatArrayOf((top.left - at[0]).toFloat(), (top.top - at[1]).toFloat(), (top.right - at[0]).toFloat(), (top.bottom - at[1]).toFloat())
+        }
         if (reported && !CameraGap.pretending) return@remember null
         val size = CameraGap.realSize(view.display) ?: return@remember null
         val r = CameraGap.presetRect(view.display?.rotation ?: 0, size.first, size.second, config.smallestScreenWidthDp) ?: return@remember null
-        val at = IntArray(2).also { view.rootView.getLocationOnScreen(it) }
         floatArrayOf(r[0] - at[0], r[1] - at[1], r[2] - at[0], r[3] - at[1])
     }
 }
@@ -558,6 +564,8 @@ private fun GapRow(gapFromEnd: ClosedFloatingPointRange<Float>?, content: @Compo
             ends[i] = start + ps[i].width
             cursor = ends[i]
         }
+        // A camera past the buttons (over the title): the row reaches over it, so the title gives way.
+        if (gapFromEnd != null && cursor < gapFromEnd.endInclusive) cursor = kotlin.math.ceil(gapFromEnd.endInclusive).toInt()
         layout(cursor, height) { ps.forEachIndexed { i, p -> p.place(cursor - ends[i], (height - p.height) / 2) } }
     }
 }
