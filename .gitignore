@@ -1,0 +1,14 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+.DS_Store
+# Built APKs (published ones live in the F-Droid repo on the server).
+*.apk
+# Signing keys never belong here; the release key is in ~/.config/sill-android/.
+*.jks
+*.p12
+*.keystore
+keystore.properties

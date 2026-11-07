@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- A window sill: a screen over a ledge. -->
+    <path android:fillColor="#FFFFFF" android:pathData="M30,34h48a4,4 0,0 1,4 4v26a4,4 0,0 1,-4 4h-48a4,4 0,0 1,-4 -4v-26a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#3A6FF7" android:pathData="M32,40h44v22h-44z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M22,72h64a3,3 0,0 1,0 6h-64a3,3 0,0 1,0 -6z" />
+</vector>
