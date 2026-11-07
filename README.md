@@ -1,11 +1,32 @@
 # Zill for Android
 
-Zill is an unofficial Android client for [Sill](https://github.com/Saffsanity/sill): it shows a window
-from your Mac, or its whole desktop, on an Android phone or tablet, and sends your touches and
-keys back. It talks to the Sill for Mac app you already run, speaking Sill's own wire protocol
-(`Sources/StreamProtocol` in the Sill repo). Nothing changes on the Mac.
+**Android client for Sill for Mac: use your Mac from your phone or foldable.**
 
-Not affiliated with or endorsed by the Sill project.
+Zill is an Android client for [Sill for Mac](https://getsill.app). It needs Sill for Mac running on
+your Mac: Zill connects to it and shows a window from your Mac, or its whole desktop, on your Android
+device.
+
+Use the window with touch, the on-screen trackpad or a keyboard. These Sill features work in Zill:
+Menus, Send Audio, Share Clipboard and Aa (text size).
+
+On your home network, Zill finds your Mac by itself. Away from home, it connects through Remote
+Access: turn Remote Access on in Sill for Mac, then add the Mac in Zill with its Remote Access
+address. Your device has to be able to reach your Mac's network.
+
+Requirements: Android 10 or later, and Sill for Mac 0.6.0 or later.
+
+Tested on the Samsung Galaxy Z Fold8. Support for more Android devices is planned.
+
+Not yet supported: connecting over a USB cable, Direct Wireless Connection, and scanning the pairing
+QR code. To pair, type the code Sill for Mac shows, or paste its pairing link.
+
+Zill uses the same protocol as Sill for iPhone and iPad (`Sources/StreamProtocol` in the
+[Sill repository](https://github.com/Saffsanity/sill)).
+
+This app is written with the help of Claude (Anthropic). Commits written with Claude carry a
+Co-Authored-By: Claude line.
+
+This project is an unofficial client and is not affiliated with or endorsed by the Sill project.
 
 ## What works
 
@@ -147,3 +168,18 @@ Phones install and update the app from the F-Droid repo,
 ```bash
 ./publish-fdroid.sh
 ```
+
+## Settings on this device
+
+These settings are in Zill's Settings panel, under This device. They apply to this Android device
+only and are never sent to the Mac.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Share Clipboard | On | Text you copy on your Mac is ready to paste on this device, and Paste in the bar sends this device's text to the Mac. Off, nothing you copy goes between the two, and Zill doesn't read this device's clipboard. |
+| Ask time servers for the delay | Off | The delay in the status line ("38 ms delay") compares this device's clock with the Mac's. Off, Zill uses Android's own network time (Android 13 and later) and contacts nothing but your Mac. On older Android the delay shows as unknown. On, Zill also asks time.google.com, time.cloudflare.com or pool.ntp.org for a more exact delay. |
+
+## License
+
+Zill is licensed under the Apache License 2.0 ([LICENSE](LICENSE)). Parts of it are derived from
+[Sill](https://github.com/Saffsanity/sill), which is also licensed under the Apache License 2.0.

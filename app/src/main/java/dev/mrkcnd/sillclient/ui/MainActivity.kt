@@ -98,7 +98,16 @@ private fun ConnectScreen(model: AppModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Connect to a Mac") },
+                title = {
+                    Column {
+                        Text("Zill")
+                        Text(
+                            "Use your Mac from your phone, through Sill",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 actions = { IconButton(onClick = model::refresh) { Icon(Icons.Default.Refresh, "Look again") } },
             )
         },
