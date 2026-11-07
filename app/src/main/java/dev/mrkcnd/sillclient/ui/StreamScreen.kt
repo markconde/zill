@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Box
@@ -74,7 +75,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -185,7 +190,7 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                 IconButton(
                     onClick = { showBar = true },
                     modifier = Modifier.align(Alignment.TopEnd)
-                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.End)).padding(8.dp)
+                        .windowInsetsPadding(cutoutInsets().only(WindowInsetsSides.Top + WindowInsetsSides.End)).padding(8.dp)
                         .background(Color(0x66000000), RoundedCornerShape(50)),
                 ) { Icon(Icons.Default.Visibility, "Show controls", tint = Color.White) }
             }
@@ -277,7 +282,7 @@ private fun TopBar(
         // Clear of the camera cutout (the Fold's punch-hole, top or side as the phone turns): the bar's
         // colour runs under it, its buttons don't.
         Modifier.fillMaxWidth().background(Color(0xFF1C1C1E))
-            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .windowInsetsPadding(cutoutInsets().only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -339,7 +344,7 @@ private fun TextScaleButton(scale: Double?, enabled: Boolean, onPick: (Double?) 
 private fun KeyRow(menuApp: String?, onMenus: () -> Unit, latched: Long, gestures: Boolean, onLatch: (Long) -> Unit, onKey: (Int) -> Unit, onGesture: (String) -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Color(0xFF2C2C2E))
-            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+            .windowInsetsPadding(cutoutInsets().only(WindowInsetsSides.Horizontal))
             .horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -470,6 +475,38 @@ private fun PickerRow(
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
+}
+
+/**
+ * Where the camera is, as insets: the window's display cutout, or, where a phone leaves that empty
+ * (seen on a Galaxy Z Fold's inner screen), the display's own cutout. Read again when the phone
+ * turns or folds.
+ */
+@Composable
+internal fun cutoutInsets(): WindowInsets {
+    val view = LocalView.current
+    val config = LocalConfiguration.current
+    val fromDisplay = remember(config, view.display) {
+        val c = view.display?.cutout
+        if (c == null) WindowInsets(0, 0, 0, 0) else WindowInsets(c.safeInsetLeft, c.safeInsetTop, c.safeInsetRight, c.safeInsetBottom)
+    }
+    return WindowInsets.displayCutout.union(fromDisplay)
+}
+
+/** "window 0/84/0/0 px · display 0/84/0/0 px", for the Settings tab: what this screen reports. */
+@Composable
+internal fun cutoutReport(): String {
+    val view = LocalView.current
+    val config = LocalConfiguration.current
+    val d = LocalDensity.current
+    val dir = LocalLayoutDirection.current
+    val w = WindowInsets.displayCutout
+    val win = "${w.getLeft(d, dir)}/${w.getTop(d)}/${w.getRight(d, dir)}/${w.getBottom(d)}"
+    val disp = remember(config, view.display) {
+        view.display?.cutout?.let { c -> "${c.safeInsetLeft}/${c.safeInsetTop}/${c.safeInsetRight}/${c.safeInsetBottom}" +
+            c.boundingRects.joinToString("") { r -> " [${r.left},${r.top}–${r.right},${r.bottom}]" } } ?: "none"
+    }
+    return "window $win px · display $disp"
 }
 
 @Composable

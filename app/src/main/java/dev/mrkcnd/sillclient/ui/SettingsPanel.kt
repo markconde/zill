@@ -48,8 +48,13 @@ fun SettingsPanel(session: StreamSession) {
     val list by session.windowList.collectAsState()
     val mac = list?.macName?.ifBlank { null } ?: "the Mac"
     val h = state
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // Which version runs here, and where this screen says its camera is: for checking a fix on a device.
+    val about = "Sill Client " + (runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?") +
+        " · camera cutout: " + cutoutReport()
     if (h == null) {
         Footnote("This Mac doesn’t share its settings with devices. Update Sill on the Mac to change them from here.")
+        Footnote(about)
         return
     }
     // What the Mac reported, with this device's changes still on their way laid over it.
@@ -110,6 +115,8 @@ fun SettingsPanel(session: StreamSession) {
                 if (h.sessionPaired == false) " Only a paired device can change it." else "")
         }
         Footnote(if (h.persistent) "Changes are saved on $mac and apply to every device." else "Changes last until Sill on $mac quits, and apply to every device.")
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Footnote(about)
     }
 }
 
