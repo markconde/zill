@@ -7,6 +7,9 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.nio.ByteBuffer
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * How far this device's clock is from true time, so a frame's age can be measured: the Mac stamps
@@ -14,8 +17,10 @@ import java.nio.ByteBuffer
  * `frameAgeMs` assumes both clocks agree. A phone's clock is often off by tens or hundreds of ms,
  * which made the age negative (reported as 0) or too large.
  *
- * SNTP (RFC 4330) against a public time server: four samples, the one with the shortest round trip
- * kept, as NTP clients do. Falls back to Android's own network time (API 33+). Null until known.
+ * Off by default (the setting "Ask time servers for the delay"): Android's own network time (API
+ * 33+) only, so Zill contacts nothing but the Mac, and the delay is unknown on older Android. On:
+ * SNTP (RFC 4330) against a public time server, four samples, the one with the shortest round trip
+ * kept, as NTP clients do, falling back to Android's network time. Null until known.
  */
 object ClockSync {
     /** Add to System.currentTimeMillis() for true time, in ms; null while unknown. */
@@ -27,6 +32,25 @@ object ClockSync {
     @Volatile private var measuredAt = 0L
     private val lock = Any()
 
+    private const val PREFS = "device"
+    private const val KEY = "askTimeServers"
+    private val _useServers = MutableStateFlow(false)
+    /** Whether to ask public time servers; off until the user turns it on. */
+    val useServers: StateFlow<Boolean> = _useServers
+
+    fun load(ctx: Context) {
+        _useServers.value = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
+    }
+
+    /** Remembered; measures again on the next stats tick. */
+    fun setUseServers(ctx: Context, on: Boolean) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+        _useServers.value = on
+        // Not under the lock, which a measurement holds for seconds: one already running keeps its
+        // result only if the switch hasn't moved since it began (refreshIfStale).
+        offsetMs = null; errorMs = null; measuredAt = 0L
+    }
+
     private val SERVERS = listOf("time.google.com", "time.cloudflare.com", "pool.ntp.org")
     private const val REFRESH_MS = 10 * 60_000L
     private const val TAG = "SillClock"
@@ -37,9 +61,11 @@ object ClockSync {
     fun refreshIfStale() {
         synchronized(lock) {
             if (offsetMs != null && SystemClock.elapsedRealtime() - measuredAt < REFRESH_MS) return
-            val m = SERVERS.firstNotNullOfOrNull { runCatching { measure(it) }.onFailure { e -> Log.i(TAG, "$it: $e") }.getOrNull() }
+            val asked = _useServers.value
+            val servers = if (asked) SERVERS else emptyList()
+            val m = servers.firstNotNullOfOrNull { runCatching { measure(it) }.onFailure { e -> Log.i(TAG, "$it: $e") }.getOrNull() }
                 ?: networkTime()
-            if (m != null) {
+            if (m != null && asked == _useServers.value) {
                 offsetMs = m.first; errorMs = m.second; measuredAt = SystemClock.elapsedRealtime()
                 Log.i(TAG, "clock offset ${"%.1f".format(m.first)} ms ± ${"%.1f".format(m.second)}")
             }

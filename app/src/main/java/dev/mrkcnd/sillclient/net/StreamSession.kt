@@ -126,6 +126,8 @@ class StreamSession(
     private var source: StreamSource = StreamSource.Desktop
     private var lastViewport: JSONObject? = null
     private var subscribedClipboard = false
+    /** The window list's `clipboard`: 1 or more when the Mac shares its clipboard. */
+    private var hostClipboard = 0
 
     // MARK: the Mac's settings (kinds 16, 17)
 
@@ -309,10 +311,8 @@ class StreamSession(
             Kind.WINDOW_LIST -> WindowList.parse(p)?.let {
                 windowList.value = it
                 if (state.value is State.Connecting) state.value = State.Live
-                if (it.clipboard >= 1 && !subscribedClipboard) {
-                    subscribedClipboard = true
-                    send(Kind.CLIPBOARD, "{}".toByteArray())
-                }
+                hostClipboard = it.clipboard
+                updateClipboardSubscription()
                 // The menus: asked once, after the first window list; an older Mac ignores it.
                 if (!menusAsked) {
                     menusAsked = true
@@ -349,7 +349,7 @@ class StreamSession(
                 is AudioMessage.Packets -> audio.packets(a.packets)
                 null -> Unit
             }
-            Kind.CLIPBOARD -> parseClipboardText(p)?.let { _clipboardFromMac.value = it }
+            Kind.CLIPBOARD -> if (ClipboardShare.on.value) parseClipboardText(p)?.let { _clipboardFromMac.value = it }
             else -> Unit // ticks, settings, menus: not used by this client
         }
     }
@@ -404,8 +404,24 @@ class StreamSession(
         }
     }
 
-    /** Puts text on the Mac's clipboard (kind 32). */
+    /**
+     * Subscribes to the Mac's clipboard while the Mac shares it and Share Clipboard is on here, and
+     * stops when the switch goes off. From each window list and the switch.
+     */
+    fun updateClipboardSubscription() {
+        val want = hostClipboard >= 1 && ClipboardShare.on.value
+        if (want && !subscribedClipboard) {
+            subscribedClipboard = true
+            send(Kind.CLIPBOARD, "{}".toByteArray())
+        } else if (!want && subscribedClipboard) {
+            subscribedClipboard = false
+            send(Kind.CLIPBOARD, JSONObject().put("stop", true).toString().toByteArray())
+        }
+    }
+
+    /** Puts text on the Mac's clipboard (kind 32), while Share Clipboard is on. */
     fun sendClipboard(text: String) {
+        if (!ClipboardShare.on.value) return
         val bytes = text.toByteArray()
         if (bytes.size > 256 * 1024) return
         send(Kind.CLIPBOARD, JSONObject().put("text", text).toString().toByteArray())

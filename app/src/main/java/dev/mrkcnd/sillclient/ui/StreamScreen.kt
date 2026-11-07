@@ -170,7 +170,12 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
                         if (trackpad) "Trackpad: drag to move the pointer, tap to click, two fingers to scroll, touch and hold to drag."
                         else "Touch: the pointer goes where you touch.", Toast.LENGTH_SHORT).show()
                 },
-                onPaste = {
+                onPaste = paste@{
+                    // Off: the clipboard isn't even read.
+                    if (!dev.mrkcnd.sillclient.net.ClipboardShare.on.value) {
+                        Toast.makeText(context, "Share Clipboard is off. Turn it on in Settings to paste on the Mac.", Toast.LENGTH_SHORT).show()
+                        return@paste
+                    }
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
                     if (text.isNullOrEmpty()) {

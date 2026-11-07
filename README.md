@@ -68,15 +68,18 @@ Not affiliated with or endorsed by the Sill project.
   device.
 - **Windows and apps**: the window list with thumbnails, picking a window or the Desktop, and
   Close, Minimize and Full Screen on long-press. Apps opens any installed app.
-- **Clipboard**: text copied on the Mac lands on Android. Paste sends Android's clipboard to
-  the Mac and presses ⌘V.
+- **Clipboard** (Share Clipboard in Settings › This device, on by default): text copied on the Mac
+  lands on Android. Paste sends Android's clipboard to the Mac and presses ⌘V. Off, the session
+  stops the Mac's clipboard (kind 32 `{"stop":true}`) and never reads Android's.
 - **Aa (window size)**: as in Sill's own app. Off, the default, leaves the Mac window alone.
   0.5× to 1.5× has the Mac resize the window it streams to this screen ÷ the scale, so a larger
   scale shows its text larger here. Windows only: Sill never resizes the Desktop.
 - **Delay**: how far behind the Mac the picture arrives, in the status line ("45 fps · 38 ms delay")
   and in the stats the Mac logs. The Mac stamps frames with its NTP-kept clock; this device
-  measures its own clock against a time server (SNTP, `ClockSync`) and corrects for it, since a
-  phone's clock is often tens of ms off. -1 (unknown) until measured.
+  corrects its own clock (`ClockSync`), since a phone's clock is often tens of ms off: with
+  Android's network time (API 33+) by default, or, with Ask time servers for the delay on in
+  Settings › This device (off by default), against a public time server (SNTP). -1 (unknown) until
+  measured.
 - **Other**: the viewport (size in dp as Sill's points, the Aa scale, refresh rate), pings and stats,
   a locked Mac's shade, and goodbyes with the Mac's message.
 

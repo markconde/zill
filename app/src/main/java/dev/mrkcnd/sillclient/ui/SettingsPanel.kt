@@ -54,6 +54,7 @@ fun SettingsPanel(session: StreamSession) {
         " · camera cutout: " + cutoutReport()
     if (h == null) {
         Footnote("This Mac doesn’t share its settings with devices. Update Sill on the Mac to change them from here.")
+        DeviceSettings(session, mac)
         Footnote(about)
         return
     }
@@ -122,8 +123,29 @@ fun SettingsPanel(session: StreamSession) {
             Toggle("Leave room for the inner camera", gapOn) { CameraGap.set(ctx, it) }
             Footnote("This phone’s inner screen doesn’t tell apps where its camera is, so Zill leaves a gap in the top bar where it sits on a Galaxy Z Fold8. This device only.")
         }
+        DeviceSettings(session, mac)
         Footnote(about)
     }
+}
+
+/** This device's own settings, never sent to the Mac: Share Clipboard and the time servers. */
+@Composable
+private fun DeviceSettings(session: StreamSession, mac: String) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Header("This device")
+    val share by dev.mrkcnd.sillclient.net.ClipboardShare.on.collectAsState()
+    Toggle("Share Clipboard", share) {
+        dev.mrkcnd.sillclient.net.ClipboardShare.set(ctx, it)
+        session.updateClipboardSubscription()
+    }
+    Footnote(if (share) "Text you copy on $mac is ready to paste on this device. To paste on $mac, copy text here, then tap Paste in the bar."
+        else "Nothing you copy goes between this device and $mac while this is off.")
+    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+    val on by dev.mrkcnd.sillclient.net.ClockSync.useServers.collectAsState()
+    Toggle("Ask time servers for the delay", on) { dev.mrkcnd.sillclient.net.ClockSync.setUseServers(ctx, it) }
+    Footnote("To show how far behind the Mac the picture is, Zill compares this device’s clock with the Mac’s. " +
+        "Off, it uses Android’s own network time (Android 13 and later), and Zill contacts nothing but your Mac. " +
+        "On, it also asks public time servers (time.google.com, time.cloudflare.com, pool.ntp.org) for a more exact delay. This device only.")
 }
 
 @Composable

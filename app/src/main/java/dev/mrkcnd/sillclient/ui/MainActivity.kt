@@ -60,6 +60,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        dev.mrkcnd.sillclient.net.ClockSync.load(this)
+        dev.mrkcnd.sillclient.net.ClipboardShare.load(this)
         enableEdgeToEdge()
         // The volume keys set the Mac sound's volume here, not the ringer's.
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
