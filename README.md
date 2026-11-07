@@ -28,6 +28,40 @@ Co-Authored-By: Claude line.
 
 This project is an unofficial client and is not affiliated with or endorsed by the Sill project.
 
+## Getting started
+
+### Install
+
+1. Install Sill for Mac from [getsill.app](https://getsill.app) and open it. It asks for Screen
+   Recording and Accessibility, and on macOS 15 or later for Local Network.
+2. On your Android device, download the latest `zill-<version>.apk` from
+   [Releases](https://github.com/markconde/zill/releases) and open it. The first time, Android asks
+   you to allow installing apps from your browser or file manager.
+
+### Pair and connect
+
+1. Open Zill on the same network as your Mac. Your Mac shows up in the list.
+2. Tap your Mac. Sill for Mac shows a 12-digit code. Type it in Zill.
+3. Zill shows your Mac. You pair once: next time, tap your Mac and it connects.
+
+Away from home, turn on Remote Access in Sill for Mac, then tap Add a Mac in Zill and type the
+Mac's Remote Access address. Zill uses Sill's Remote Access port, 7455, unless you add another. For
+example:
+
+- **Over WireGuard into your home network**: the Mac's address at home, such as `192.168.1.20`.
+- **With a port forwarded on your router**: your home's public address or name with that port, such
+  as `home.example.com:7455`.
+
+A Mac you already paired connects without a code.
+
+### Using Zill
+
+- **The bar** at the top: Disconnect, Mute, the on-screen trackpad, Windows and apps, Paste,
+  Keyboard and, with the screen upright, Split layout. Hide controls makes room for the picture.
+- **The key row** under the bar: Menus for the app you use, then esc, tab, the arrows and ⌘ ⌥ ⌃ ⇧.
+- **Windows and apps** opens a sheet with three tabs: Windows to pick a window or the Desktop, Apps
+  to open any app on the Mac, and Settings for Sill for Mac's settings and this device's.
+
 ## Features
 
 - **Finding your Mac**: Macs running Sill for Mac on your network show up in Zill by themselves.
