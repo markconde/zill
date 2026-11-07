@@ -91,6 +91,7 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
     val list by session.windowList.collectAsState()
     val fps by session.fps.collectAsState()
     val rtt by session.rttMs.collectAsState()
+    val frameAge by session.frameAgeMs.collectAsState()
     val macPointer by session.macPointer.collectAsState()
     val cursorShape by session.cursorShape.collectAsState()
     var muted by remember { mutableStateOf(session.audio.muted) }
@@ -123,7 +124,7 @@ fun StreamScreen(session: StreamSession, title: String, onClose: () -> Unit) {
             TopBar(
                 title = list?.macName?.ifBlank { null } ?: title,
                 // The sound's state rides along: the line recomposes every second with the fps.
-                status = if (state is StreamSession.State.Live) listOfNotNull("$fps fps · $rtt ms", session.audio.statusText()).joinToString(" · ") else "",
+                status = if (state is StreamSession.State.Live) listOfNotNull("$fps fps · " + (frameAge?.let { "$it ms delay" } ?: "$rtt ms"), session.audio.statusText()).joinToString(" · ") else "",
                 onClose = onClose,
                 onWindows = { showPicker = true },
                 onKeyboard = { view?.showKeyboard() },

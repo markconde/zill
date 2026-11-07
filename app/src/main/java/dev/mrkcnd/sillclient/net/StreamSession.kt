@@ -16,6 +16,7 @@ import dev.mrkcnd.sillclient.protocol.WindowList
 import dev.mrkcnd.sillclient.protocol.clientStatsJson
 import dev.mrkcnd.sillclient.protocol.gestureJson
 import dev.mrkcnd.sillclient.protocol.helloJson
+import dev.mrkcnd.sillclient.protocol.median
 import dev.mrkcnd.sillclient.protocol.MacMenu
 import dev.mrkcnd.sillclient.protocol.HostSettingsState
 import dev.mrkcnd.sillclient.protocol.SettingsChange
@@ -113,7 +114,11 @@ class StreamSession(
     @Volatile private var closed = false
     @Volatile private var ready = false
     private val framesThisSecond = AtomicInteger(0)
-    @Volatile private var lastFrameAgeMs = 0
+    /** This second's samples: frame ages (true time minus the Mac's stamp) and round trips, in ms. */
+    private val ageSamples = java.util.Collections.synchronizedList(ArrayList<Int>())
+    private val rttSamples = java.util.Collections.synchronizedList(ArrayList<Int>())
+    /** How far behind the Mac the picture arrives: last second's median, null while unknown. */
+    val frameAgeMs = MutableStateFlow<Int?>(null)
     @Volatile private var lastKeyframeAsk = 0L
     @Volatile private var lastKeyframeAt = System.nanoTime()
     private var pinger: ScheduledFuture<*>? = null
@@ -292,7 +297,12 @@ class StreamSession(
             }
             Kind.FRAME -> {
                 framesThisSecond.incrementAndGet()
-                lastFrameAgeMs = ((Wire.now() - ts) * 1000).toInt().coerceIn(0, 60_000)
+                // The Mac's stamp is its NTP-kept clock; this device's clock is corrected by ClockSync.
+                // Unknown until measured: a raw difference would mostly be the clocks' disagreement.
+                ClockSync.offsetMs?.let { off ->
+                    val age = (Wire.now() * 1000 + off - ts * 1000)
+                    if (age > -50 && age < 60_000) ageSamples += age.toInt().coerceAtLeast(0)
+                }
                 if (key) lastKeyframeAt = System.nanoTime()
                 videoSink?.onFrame(p, key)
             }
@@ -321,6 +331,7 @@ class StreamSession(
             Kind.PONG -> if (p.size == 8) {
                 val sent = ByteBuffer.wrap(p).double
                 rttMs.value = ((System.nanoTime() / 1e9 - sent) * 1000).toInt().coerceAtLeast(0)
+                rttSamples += rttMs.value
             }
             Kind.MAC_INFO -> MacInfo.verify(p)?.let { info ->
                 // Only a Mac whose key is the one this connection pinned may tell us where to find it.
@@ -426,10 +437,23 @@ class StreamSession(
         if (sink != null && sink.needsKeyframe && System.nanoTime() - lastKeyframeAt > 1_000_000_000L) requestKeyframe()
     }
 
+    private var statsCount = 0
+    @Volatile private var clockAsking = false
+
     private fun reportStats() {
         val n = framesThisSecond.getAndSet(0)
         fps.value = n
-        send(Kind.CLIENT_STATS, clientStatsJson(n, lastFrameAgeMs, rttMs.value, deviceName).toString().toByteArray())
+        val ages = synchronized(ageSamples) { ageSamples.toList().also { ageSamples.clear() } }
+        val rtts = synchronized(rttSamples) { rttSamples.toList().also { rttSamples.clear() } }
+        val age = median(ages)
+        frameAgeMs.value = age.takeIf { it >= 0 } ?: frameAgeMs.value.takeIf { ClockSync.offsetMs != null && n == 0 }
+        send(Kind.CLIENT_STATS, clientStatsJson(n, age, median(rtts), deviceName,
+            frameAgeMaxMs = ages.maxOrNull() ?: -1, rttMaxMs = rtts.maxOrNull() ?: -1).toString().toByteArray())
+        // Measure this device's clock (at the start, then every 10 minutes): off the reader thread.
+        if ((ClockSync.offsetMs == null || statsCount++ % 60 == 0) && !clockAsking) {
+            clockAsking = true
+            thread(name = "sill-clock", isDaemon = true) { try { ClockSync.refreshIfStale() } finally { clockAsking = false } }
+        }
     }
 
     fun close() {

@@ -74,8 +74,18 @@ fun viewportJson(width: Double, height: Double, scale: Double?, fps: Int?): JSON
     return o
 }
 
-fun clientStatsJson(fps: Int, frameAgeMs: Int, rttMs: Int, device: String): JSONObject =
-    JSONObject().put("fps", fps).put("frameAgeMs", frameAgeMs).put("rttMs", rttMs).put("device", device)
+/**
+ * Kind 12, once a second (Sill's ClientStats): that second's median frame age and round trip, -1
+ * for a second with no sample (no frame, no pong, or this device's clock not yet measured), and
+ * the second's worst of each as the optional maxima.
+ */
+fun clientStatsJson(fps: Int, frameAgeMs: Int, rttMs: Int, device: String, frameAgeMaxMs: Int? = null, rttMaxMs: Int? = null): JSONObject =
+    JSONObject().put("fps", fps).put("frameAgeMs", frameAgeMs).put("rttMs", rttMs).put("device", device).apply {
+        frameAgeMaxMs?.let { put("frameAgeMaxMs", it) }; rttMaxMs?.let { put("rttMaxMs", it) }
+    }
+
+/** The median of a second's samples, -1 for none. */
+fun median(samples: List<Int>): Int = if (samples.isEmpty()) -1 else samples.sorted()[samples.size / 2]
 
 fun windowCommandJson(id: Long, action: String): JSONObject = JSONObject().put("id", id).put("action", action)
 
