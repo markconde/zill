@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -80,21 +81,35 @@ class MainActivity : ComponentActivity() {
 private fun App(model: AppModel) {
     val session by model.session.collectAsState()
     val pairing by model.pairing.collectAsState()
+    var adding by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
+    val canScan = hasCamera(androidx.compose.ui.platform.LocalContext.current)
     val s = session
     if (s != null) {
         BackHandler { model.disconnect() }
         StreamScreen(s, model.sessionTitle.collectAsState().value, onClose = model::disconnect)
+    } else if (scanning) {
+        // Back or Type the Code Instead returns to the dialog the scan started from.
+        QrScanner(
+            onLink = { scanning = false; adding = false; model.scanned(it) },
+            onCancel = { scanning = false },
+        )
+        return
     } else {
-        ConnectScreen(model)
+        ConnectScreen(model, onAdd = { adding = true })
     }
-    PairingDialog(pairing, model)
+    if (adding) AddMacDialog(
+        onDismiss = { adding = false },
+        onAdd = { adding = false; model.addByAddress(it) },
+        onScan = if (canScan) ({ scanning = true }) else null,
+    )
+    PairingDialog(pairing, model, onScan = if (canScan) ({ scanning = true }) else null)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun ConnectScreen(model: AppModel) {
+private fun ConnectScreen(model: AppModel, onAdd: () -> Unit) {
     val rows by model.rows.collectAsState()
-    var adding by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -112,7 +127,7 @@ private fun ConnectScreen(model: AppModel) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add a Mac") })
+            ExtendedFloatingActionButton(onClick = onAdd, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add a Mac") })
         },
     ) { pad ->
         if (rows.isEmpty()) {
@@ -154,11 +169,10 @@ private fun ConnectScreen(model: AppModel) {
             }
         }
     }
-    if (adding) AddMacDialog(onDismiss = { adding = false }, onAdd = { adding = false; model.addByAddress(it) })
 }
 
 @Composable
-private fun AddMacDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+private fun AddMacDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit, onScan: (() -> Unit)?) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -166,10 +180,15 @@ private fun AddMacDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
         text = {
             Column {
                 Text(
-                    "On your Mac, choose Pair iPhone or iPad… in Sill's menu. Type the Mac's address (its Remote Access " +
-                        "address), or paste the pairing link.",
+                    "On your Mac, choose Pair iPhone or iPad… in Sill's menu. " +
+                        (if (onScan != null) "Scan the QR code it shows, or type" else "Type") +
+                        " the Mac's address (its Remote Access address), or paste the pairing link.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (onScan != null) {
+                    Spacer(Modifier.height(12.dp))
+                    ScanButton(onScan)
+                }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(text, { text = it }, label = { Text("Address or sill://pair link") }, singleLine = true)
             }
@@ -180,7 +199,15 @@ private fun AddMacDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
 }
 
 @Composable
-private fun PairingDialog(p: PairingUi, model: AppModel) {
+private fun ScanButton(onScan: () -> Unit) {
+    androidx.compose.material3.FilledTonalButton(onClick = onScan, Modifier.fillMaxWidth()) {
+        Icon(Icons.Default.QrCodeScanner, null, Modifier.size(20.dp))
+        Text("Scan QR Code", Modifier.padding(start = 8.dp))
+    }
+}
+
+@Composable
+private fun PairingDialog(p: PairingUi, model: AppModel, onScan: (() -> Unit)?) {
     when (p) {
         PairingUi.None -> Unit
         is PairingUi.Busy -> AlertDialog(
@@ -207,9 +234,17 @@ private fun PairingDialog(p: PairingUi, model: AppModel) {
                 text = {
                     Column {
                         Text(
-                            if (p.fromAsk) "Your Mac shows a pairing code now. Type its 12 digits, or paste its pairing link."
-                            else "Type the 12-digit code your Mac shows, or paste its pairing link.",
+                            when {
+                                p.fromAsk && onScan != null -> "Your Mac shows a pairing code now. Scan its QR code, or type its 12 digits."
+                                p.fromAsk -> "Your Mac shows a pairing code now. Type its 12 digits, or paste its pairing link."
+                                onScan != null -> "Scan the QR code your Mac shows, or type its 12-digit code."
+                                else -> "Type the 12-digit code your Mac shows, or paste its pairing link."
+                            },
                         )
+                        if (onScan != null) {
+                            Spacer(Modifier.height(12.dp))
+                            ScanButton(onScan)
+                        }
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             code, { code = it },

@@ -79,6 +79,15 @@ class StandInServe {
         ss.needClientAuth = true
         ss.sslParameters = ss.sslParameters.also { it.applicationProtocols = arrayOf(Tls.SESSION_ALPN, Tls.PAIRING_ALPN) }
         say("stand-in Mac ${MacId.make(macFp)} listening on 17455; code 4829 1355 7208")
+        // The QR path: the link Sill's pairing window shows as a QR code, at the address an emulator
+        // reaches this computer on (or SILL_STANDIN_ADDRESS). build/standin-qr.png is its QR code.
+        val secret = ByteArray(16) { 0x5A }
+        val address = System.getenv("SILL_STANDIN_ADDRESS") ?: "10.0.2.2"
+        val link = "sill://pair?v=1&m=${MacId.make(macFp)}&k=${Base64Url.encode(macFp)}&s=${Base64Url.encode(secret)}" +
+            "&n=Stand-in%20Mac&p=17455&a=$address"
+        File(log.parentFile, "standin-link.txt").writeText(link + "\n")
+        writeQr(link, File(log.parentFile, "standin-qr.png"))
+        say("pairing link $link")
         val clip = parseClip(javaClass.classLoader!!.getResourceAsStream("testclip.hevc").readBytes())
         say("clip: ${clip.second.size} access units, ${clip.first.size} parameter sets")
 
@@ -96,7 +105,7 @@ class StandInServe {
                                 val m = Wire.read(input)
                                 val req = JSONObject(String(m.payload))
                                 say("kind ${m.kind} ${req.getString("method")} from ${req.optString("name")} (${req.optString("model")})")
-                                val k = PairingProof.codeKey(code, macFp)
+                                val k = if (req.getString("method") == "qr") secret else PairingProof.codeKey(code, macFp)
                                 val ok = MessageDigest.isEqual(Base64Url.decode(req.getString("proof")), PairingProof.deviceProof(k, deviceFp, macFp))
                                 val answer = when {
                                     req.getString("method") == "ask" -> JSONObject().put("ok", false).put("reason", "shown")
@@ -117,6 +126,38 @@ class StandInServe {
         }
         Thread.sleep(seconds!! * 1000L)
         ss.close()
+    }
+
+    /** The link as a QR code like Sill's: level M, dark on white, 4-module quiet zone. */
+    private fun writeQr(text: String, file: File) {
+        val m = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0, mapOf(
+            com.google.zxing.EncodeHintType.ERROR_CORRECTION to com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M,
+            com.google.zxing.EncodeHintType.MARGIN to 4))
+        // A greyscale PNG, written by hand: unit tests compile against android.jar, which has no ImageIO.
+        val scale = 12
+        val w = m.width * scale
+        val h = m.height * scale
+        val raw = java.io.ByteArrayOutputStream()
+        for (y in 0 until h) {
+            raw.write(0)
+            for (x in 0 until w) raw.write(if (m[x / scale, y / scale]) 0x00 else 0xFF)
+        }
+        val png = java.io.ByteArrayOutputStream()
+        fun chunk(type: String, data: ByteArray) {
+            val d = java.io.DataOutputStream(png)
+            d.writeInt(data.size)
+            val body = type.toByteArray() + data
+            d.write(body)
+            d.writeInt(java.util.zip.CRC32().apply { update(body) }.value.toInt())
+        }
+        png.write(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10))
+        val ihdr = java.nio.ByteBuffer.allocate(13).putInt(w).putInt(h).put(8).put(0).put(0).put(0).put(0).array()
+        chunk("IHDR", ihdr)
+        val z = java.io.ByteArrayOutputStream()
+        java.util.zip.DeflaterOutputStream(z).use { it.write(raw.toByteArray()) }
+        chunk("IDAT", z.toByteArray())
+        chunk("IEND", ByteArray(0))
+        file.writeBytes(png.toByteArray())
     }
 
     private fun session(s: SSLSocket, input: DataInputStream, clip: Pair<ByteArray, List<Pair<ByteArray, Boolean>>>) {

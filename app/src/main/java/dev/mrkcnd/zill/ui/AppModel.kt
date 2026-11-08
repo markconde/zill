@@ -162,6 +162,40 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Pairs by a link's QR path, trying its addresses in the Mac's order (at most 5) until one
+     * answers. Only an address that can't be reached moves on: the Mac's own answer ends it.
+     */
+    private fun pairByLink(link: PairLink) {
+        val tries = link.addresses.map { splitHostPort(it, link.port) }.filter { it.first.isNotEmpty() }
+        if (tries.isEmpty()) { pairing.value = PairingUi.Failed("That link has no address. Type the Mac's address instead."); return }
+        viewModelScope.launch {
+            var reason: String? = null
+            for ((h, port) in tries) {
+                pairing.value = PairingUi.Busy("Pairing with ${link.name} at ${hostPort(h, port)}…")
+                val tried = withContext(Dispatchers.IO) {
+                    runCatching { PairingClient(identity, deviceName).pairWithLink(link, h, port) }
+                }
+                val outcome = tried.getOrNull()
+                if (outcome == null) { reason = tried.exceptionOrNull()?.message; continue }
+                pairing.value = PairingUi.None
+                when (outcome) {
+                    is PairingClient.Outcome.Paired -> paired(outcome.mac.copy(manualHost = hostPort(h, port), remotePort = port), null)
+                    is PairingClient.Outcome.Failed -> pairing.value = PairingUi.Failed(outcome.text)
+                    is PairingClient.Outcome.CodeShown -> pairing.value = PairingUi.Failed("${link.name} asked for a code. Pair again.")
+                }
+                return@launch
+            }
+            val where = tries.joinToString(", ") { hostPort(it.first, it.second) }
+            pairing.value = PairingUi.Failed("Couldn't reach ${link.name} at $where." + (reason?.let { " ($it)" } ?: ""))
+        }
+    }
+
+    /** A sill://pair link from the QR scanner: it answers the open pairing dialog, or adds a Mac. */
+    fun scanned(link: String) {
+        if (pairing.value is PairingUi.EnterCode) submitCode(link) else addByAddress(link)
+    }
+
     fun cancelPairing() {
         val p = pairing.value
         pairing.value = PairingUi.None
@@ -174,15 +208,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun addByAddress(address: String) {
         val trimmed = address.trim()
         val link = PairLink.parse(trimmed)
-        if (link != null) {
-            val host = link.addresses.firstOrNull() ?: run {
-                pairing.value = PairingUi.Failed("That link has no address. Type the Mac's address instead."); return
-            }
-            val (h, port) = splitHostPort(host, link.port)
-            pairing.value = PairingUi.EnterCode(link.name, h, port, link.fingerprint, fromAsk = false)
-            submitCode(trimmed)
-            return
-        }
+        if (link != null) { pairByLink(link); return }
         val (h, port) = splitHostPort(trimmed, 7455)
         if (h.isEmpty()) { pairing.value = PairingUi.Failed("Type the Mac's address, such as 192.168.1.20."); return }
         val known = saved.value

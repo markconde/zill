@@ -40,9 +40,14 @@ protocol.
 - **Finding your Mac**: Bonjour (`_sill._tcp`) on the local network, with the TXT record's door
   type (`p`) and recognition tag (`r`), so a paired Mac is recognized by its tag.
 - **Pairing**: tap an unpaired Mac and it shows its code (kind 19 `ask` → `shown`). Type the 12
-  digits, which are checked with the Damm digit, or paste the `sill://pair` link. The code path
-  uses PBKDF2-HMAC-SHA256 with 600,000 rounds, and both proofs are checked. The Mac's key is
-  pinned from then on.
+  digits, which are checked with the Damm digit, or scan the QR code, or paste the `sill://pair`
+  link the QR code carries. The code path uses PBKDF2-HMAC-SHA256 with 600,000 rounds; the QR
+  path's key is the link's 16-byte secret. Both proofs are checked, and the Mac's key is pinned
+  from then on.
+- **Scanning**: CameraX frames go to ZXing (`scan/QrDecode.kt`), which reads the brightness plane
+  only. No Google Play services. Only a link `PairLink.parse` accepts ends the scan; other QR
+  codes show a hint. The camera permission is asked the first time Scan QR Code is tapped, and
+  devices without a camera don't show the button.
 - **Security**: TLS 1.3 only. This device has a P-256 identity with a self-signed certificate
   built the way Sill's `SelfSignedCertificate` builds it. The key is wrapped by an Android
   Keystore AES key. The pin (SHA-256 of the Mac's SPKI) is checked inside the handshake, so a
@@ -130,6 +135,8 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Android 10 (API 29) or l
 - `ProtocolVectorsTest`: the pairing vectors published in Sill's `docs/remote-access-plan.md`
   (Mac ID, code key, both proofs for the code and QR paths, recognition tag), the Damm check
   digit, pairing links, NAL conversion, and the SPS size of a test clip.
+- `QrDecodeTest`: a pairing link drawn as a level M QR code into a camera-like frame (with row
+  padding) reads back, a blank frame reads nothing, and another QR code is not taken as a link.
 - `LoopbackMacTest`: a stand-in Mac on loopback, written from the wire rules. It covers a TLS
   1.3 door with client certificates and ALPN, ask → shown → a wrong code refused → the right
   code paired, then a pinned session (hello first, source, viewport, window list, clipboard
@@ -148,8 +155,11 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Android 10 (API 29) or l
 - `ZoomOnDeviceTest` (on a device or emulator, `./gradlew connectedDebugAndroidTest`, with the
   stand-in paired): real pinches and two-finger drags, with screenshots in the app's files folder.
 
-  In the app, choose Add a Mac, enter `10.0.2.2:17455` and the code `4829 1355 7208`. The
-  stand-in logs every message it receives to `build/standin.log`.
+  In the app, choose Add a Mac, enter `10.0.2.2:17455` and the code `4829 1355 7208`. Or pair by
+  the QR path: the stand-in writes its link to `build/standin-link.txt` and its QR code to
+  `build/standin-qr.png` (the address is `10.0.2.2`, or `SILL_STANDIN_ADDRESS`). Paste the link,
+  or start the emulator with `-camera-back virtualscene -virtualscene-poster wall=<that png>` and
+  scan it. The stand-in logs every message it receives to `build/standin.log`.
 
 ## Source and releases
 
