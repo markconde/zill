@@ -17,8 +17,7 @@ Requirements: Android 10 or later, and Sill for Mac 0.6.0 or later.
 
 Tested on the Samsung Galaxy Z Fold8. Support for more Android devices is planned.
 
-Not yet supported: connecting over a USB cable, Direct Wireless Connection, and scanning the pairing
-QR code. To pair, type the code Sill for Mac shows, or paste its pairing link.
+Not yet supported: connecting over a USB cable and Direct Wireless Connection.
 
 Zill uses the same protocol as Sill for iPhone and iPad (`Sources/StreamProtocol` in the
 [Sill repository](https://github.com/Saffsanity/sill)).
@@ -41,11 +40,12 @@ This project is an unofficial client and is not affiliated with or endorsed by t
 ### Pair and connect
 
 1. Open Zill on the same network as your Mac. Your Mac shows up in the list.
-2. Tap your Mac. Sill for Mac shows a 12-digit code. Type it in Zill.
+2. Tap your Mac. Sill for Mac shows a QR code and a 12-digit code. Tap Scan QR Code and point the
+   camera at the QR code, or type the code. The first time, Android asks to let Zill use the camera.
 3. Zill shows your Mac. You pair once: next time, tap your Mac and it connects.
 
-Away from home, turn on Remote Access in Sill for Mac, then tap Add a Mac in Zill and type the
-Mac's Remote Access address. Zill uses Sill's Remote Access port, 7455, unless you add another. For
+Away from home, turn on Remote Access in Sill for Mac, then tap Add a Mac in Zill and scan the QR
+code Sill for Mac shows, or type the Mac's Remote Access address. Zill uses Sill's Remote Access port, 7455, unless you add another. For
 example:
 
 - **Over WireGuard into your home network**: the Mac's address at home, such as `192.168.1.20`.
@@ -65,7 +65,8 @@ A Mac you already paired connects without a code.
 ## Features
 
 - **Finding your Mac**: Macs running Sill for Mac on your network show up in Zill by themselves.
-- **Pairing**: tap a Mac and type the 12-digit code Sill for Mac shows, or paste its pairing link.
+- **Pairing**: tap a Mac and scan the QR code Sill for Mac shows, or type its 12-digit code or paste
+  its pairing link. Zill uses the camera only to scan the code.
   You pair once. After that, Zill connects without a code.
 - **Security**: the connection is encrypted, and Zill checks that it is talking to the Mac you
   paired with before it sends anything.
